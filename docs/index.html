@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StorageFlow 2.0 — Next-Gen Windows Storage Management & Transfer</title>
+  <meta name="description" content="StorageFlow 2.0 is a lightweight, universal Windows 10 and 11 desktop application for smart disk analysis, high-speed file exploration, universal portable device browsing, and wireless offline transfer.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            },
+            dark: {
+              900: '#06070a',
+              850: '#0b0d13',
+              800: '#111520',
+              700: '#1a2030',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #06070a;
+      color: #e2e8f0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      overflow-x: hidden;
+    }
+    .glass-card {
+      background: rgba(17, 21, 32, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card-hover {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .glass-card-hover:hover {
+      transform: translateY(-4px);
+      border-color: rgba(96, 165, 250, 0.35);
+      box-shadow: 0 16px 40px -12px rgba(59, 130, 246, 0.2);
+    }
+    .glow-blue {
+      box-shadow: 0 0 50px -10px rgba(59, 130, 246, 0.4);
+    }
+    .text-gradient {
+      background: linear-gradient(135deg, #ffffff 0%, #93c5fd 60%, #3b82f6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .text-gradient-purple {
+      background: linear-gradient(135deg, #c084fc 0%, #60a5fa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .ambient-glow {
+      position: absolute;
+      border-radius: 9999px;
+      filter: blur(120px);
+      pointer-events: none;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body class="min-h-screen selection:bg-blue-500 selection:text-white">
+
+  <!-- Ambient Glow Effects -->
+  <div class="ambient-glow w-[550px] h-[550px] bg-blue-600/15 -top-40 -left-40"></div>
+  <div class="ambient-glow w-[600px] h-[600px] bg-indigo-600/10 top-1/3 -right-40"></div>
+  <div class="ambient-glow w-[500px] h-[500px] bg-cyan-500/10 bottom-40 left-1/4"></div>
+
+  <!-- Navigation Bar -->
+  <header class="sticky top-0 z-50 backdrop-blur-xl bg-dark-900/80 border-b border-white/5 transition-all">
+    <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+      <a href="#" class="flex items-center gap-3 group">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-black text-white shadow-lg shadow-blue-500/25 group-hover:scale-105 transition-transform">
+          SF
+        </div>
+        <div>
+          <span class="text-xl font-extrabold tracking-tight text-white flex items-center gap-1.5">
+            StorageFlow <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-bold border border-blue-500/30">2.0</span>
+          </span>
+          <p class="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Universal Windows Edition</p>
+        </div>
+      </a>
+
+      <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-300">
+        <a href="#features" class="hover:text-blue-400 transition-colors">Features</a>
+        <a href="#screenshots" class="hover:text-blue-400 transition-colors">Screenshots</a>
+        <a href="#performance" class="hover:text-blue-400 transition-colors">Performance</a>
+        <a href="#compatibility" class="hover:text-blue-400 transition-colors">Compatibility</a>
+        <a href="#faq" class="hover:text-blue-400 transition-colors">FAQ</a>
+      </nav>
+
+      <div class="flex items-center gap-3">
+        <a href="https://github.com/saibalanaramsetti-cmd/Storageflow-1" target="_blank" rel="noopener" class="px-4 py-2 rounded-xl text-xs font-semibold text-gray-300 hover:text-white glass-card hover:bg-white/10 transition-all flex items-center gap-2">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>GitHub</span>
+        </a>
+        <a href="#download" class="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-500/25 flex items-center gap-2">
+          <span>Download Free</span>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="relative pt-20 pb-28 px-6 overflow-hidden">
+    <div class="max-w-5xl mx-auto text-center relative z-10">
+      
+      <!-- Announcement Pill -->
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-card border-blue-500/30 text-xs font-semibold text-blue-300 mb-8">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>StorageFlow 2.0 is Here</span>
+        <span class="text-gray-500">•</span>
+        <span class="text-gray-400">100% Offline Universal Windows Optimization</span>
+      </div>
+
+      <!-- Main Headline -->
+      <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6">
+        Master Your Windows Storage <br>
+        <span class="text-gradient">With Zero Friction.</span>
+      </h1>
+
+      <p class="max-w-2xl mx-auto text-base sm:text-lg text-gray-400 mb-10 leading-relaxed">
+        The blazing-fast, offline Windows storage analyzer, smart file explorer, and wireless transfer hub designed to run smoothly on any PC — from 4GB budget laptops to 32GB workstations.
+      </p>
+
+      <!-- CTA Buttons -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14" id="download">
+        <a href="https://github.com/saibalanaramsetti-cmd/Storageflow-1/releases/latest/download/StorageFlow-Setup.exe" class="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-bold text-white shadow-xl shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.02] transition-all flex items-center justify-center gap-3 text-sm">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+          <div class="text-left">
+            <div class="leading-none text-xs opacity-80">Download for Windows 10 & 11</div>
+            <div class="leading-tight text-base font-extrabold">StorageFlow 2.0 (64-Bit)</div>
+          </div>
+        </a>
+
+        <a href="https://github.com/saibalanaramsetti-cmd/Storageflow-1" target="_blank" rel="noopener" class="w-full sm:w-auto px-7 py-4 rounded-2xl glass-card hover:bg-white/10 font-bold text-gray-200 hover:text-white transition-all flex items-center justify-center gap-3 text-sm border-white/10">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+          <span>View Source on GitHub</span>
+        </a>
+      </div>
+
+      <!-- Specs Badges -->
+      <div class="flex flex-wrap items-center justify-center gap-6 text-xs text-gray-400 font-medium">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+          <span>100% Free & Open Source</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+          <span>Runs 100% Offline</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+          <span>No Cloud or Telemetry</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+          <span>Supports 4GB Low-End PCs</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- App Hero Showcase Window -->
+    <div class="max-w-6xl mx-auto mt-16 relative z-10">
+      <div class="relative rounded-3xl p-2 bg-gradient-to-b from-blue-500/30 via-white/10 to-transparent glow-blue">
+        <div class="rounded-2xl overflow-hidden bg-dark-900 border border-white/15 shadow-2xl">
+          <!-- Window Titlebar Mockup -->
+          <div class="h-10 px-4 bg-dark-850 border-b border-white/5 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+              <span class="ml-4 text-xs font-semibold text-gray-400">StorageFlow 2.0 — System Overview & Health Metrics</span>
+            </div>
+            <div class="text-[11px] text-gray-500 font-mono">Offline • Windows 11 Fluent Glass</div>
+          </div>
+          <!-- Hero Image -->
+          <img src="screenshots/dashboard.png" alt="StorageFlow Dashboard" class="w-full h-auto object-cover">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Key Highlights Grid -->
+  <section id="features" class="py-24 px-6 border-t border-white/5 bg-dark-850/50">
+    <div class="max-w-7xl mx-auto">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="text-xs uppercase font-extrabold tracking-widest text-blue-400 mb-3">Engineered for Performance</h2>
+        <p class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">Everything You Need To Free Up Space & Manage Storage.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        
+        <!-- Feature 1 -->
+        <div class="glass-card rounded-3xl p-8 glass-card-hover flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mb-6">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-3">Ultra-Fast Folder Size Calculation</h3>
+            <p class="text-sm text-gray-400 leading-relaxed">
+              Equipped with our non-blocking, stack-based traversal engine. Prioritizes currently visible folders to calculate consumption in milliseconds without freezing your UI.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-white/5 text-xs text-blue-400 font-semibold flex items-center gap-1.5">
+            <span>Up to 12 parallel threads</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="glass-card rounded-3xl p-8 glass-card-hover flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mb-6">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-3">Universal Smartphone & Tablet Support</h3>
+            <p class="text-sm text-gray-400 leading-relaxed">
+              Plug in your Android phone, iPhone, iPad, or tablet via USB. StorageFlow seamlessly browses internal storage and SD cards with safe local file extraction.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-white/5 text-xs text-indigo-400 font-semibold flex items-center gap-1.5">
+            <span>Direct MTP integration</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="glass-card rounded-3xl p-8 glass-card-hover flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-2xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mb-6">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-3">Zero-Config Wireless Transfer</h3>
+            <p class="text-sm text-gray-400 leading-relaxed">
+              Share heavy videos, photos, and files between your PC and mobile devices over high-speed local Wi-Fi. Just scan a QR code — zero internet or cables needed.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-white/5 text-xs text-emerald-400 font-semibold flex items-center gap-1.5">
+            <span>Peer-to-peer Wi-Fi speed</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="glass-card rounded-3xl p-8 glass-card-hover flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-2xl bg-cyan-600/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center mb-6">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-3">Real-Time Drive Health & Telemetry</h3>
+            <p class="text-sm text-gray-400 leading-relaxed">
+              Live monitoring of NVMe SSDs, SATA drives, and HDDs. View read/write speeds, available storage headroom, CPU cores, RAM consumption, and battery metrics.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-white/5 text-xs text-cyan-400 font-semibold flex items-center gap-1.5">
+            <span>Non-blocking WMI engine</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="glass-card rounded-3xl p-8 glass-card-hover flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-2xl bg-amber-600/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mb-6">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-3">100% Privacy & Zero Telemetry</h3>
+            <p class="text-sm text-gray-400 leading-relaxed">
+              Your files and directories never leave your machine. StorageFlow operates in 100% isolated offline mode with no analytics, tracking, or cloud servers.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-white/5 text-xs text-amber-400 font-semibold flex items-center gap-1.5">
+            <span>Full data sovereignty</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="glass-card rounded-3xl p-8 glass-card-hover flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-2xl bg-rose-600/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mb-6">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-3">Adaptive Hardware Profiles</h3>
+            <p class="text-sm text-gray-400 leading-relaxed">
+              Automatically selects Low-End Mode, Balanced Mode, or High-Performance Mode based on your RAM and CPU cores to ensure maximum fluidity and battery efficiency.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-white/5 text-xs text-rose-400 font-semibold flex items-center gap-1.5">
+            <span>Hardware auto-detection</span> &rarr;
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Screenshots Showcase -->
+  <section id="screenshots" class="py-24 px-6">
+    <div class="max-w-7xl mx-auto">
+      <div class="text-center max-w-2xl mx-auto mb-12">
+        <h2 class="text-xs uppercase font-extrabold tracking-widest text-blue-400 mb-3">Interface Showcase</h2>
+        <p class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Built with Windows 11 Glassmorphism.</p>
+        <p class="text-sm text-gray-400 mt-3">Explore the actual screens and workflows of StorageFlow 2.0.</p>
+      </div>
+
+      <!-- Tab Buttons -->
+      <div class="flex flex-wrap items-center justify-center gap-2 mb-8">
+        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all bg-blue-600 text-white shadow-lg shadow-blue-500/20">
+          Dashboard
+        </button>
+        <button onclick="switchTab('explorer')" id="tab-explorer" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
+          File Explorer
+        </button>
+        <button onclick="switchTab('analyzer')" id="tab-analyzer" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
+          Storage Breakdown
+        </button>
+        <button onclick="switchTab('devices')" id="tab-devices" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
+          Portable Devices
+        </button>
+        <button onclick="switchTab('wireless')" id="tab-wireless" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
+          Wireless Sharing
+        </button>
+      </div>
+
+      <!-- Screenshot Display Box -->
+      <div class="relative rounded-3xl p-3 glass-card border-white/15 glow-blue overflow-hidden max-w-5xl mx-auto">
+        <div id="screenshot-container" class="rounded-2xl overflow-hidden bg-black/60 aspect-[16/10] flex items-center justify-center">
+          <img id="active-screenshot" src="screenshots/dashboard.png" alt="StorageFlow Screenshot" class="w-full h-full object-contain transition-opacity duration-300">
+        </div>
+        <div id="active-caption" class="p-4 text-center text-xs font-medium text-gray-400 border-t border-white/5 mt-2">
+          Real-time system telemetry, connected internal drives, battery metrics, and quick category breakdown.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Hardware Compatibility Table -->
+  <section id="compatibility" class="py-24 px-6 border-t border-white/5 bg-dark-850/40">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center max-w-2xl mx-auto mb-16">
+        <h2 class="text-xs uppercase font-extrabold tracking-widest text-blue-400 mb-3">Universal Windows Support</h2>
+        <p class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Fine-Tuned For Every Generation of PC</p>
+      </div>
+
+      <div class="glass-card rounded-3xl overflow-hidden border-white/10">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-white/[0.04] text-gray-400 uppercase tracking-wider font-bold border-b border-white/5">
+              <tr>
+                <th class="p-4 sm:p-5">Hardware Profile</th>
+                <th class="p-4 sm:p-5">Specifications</th>
+                <th class="p-4 sm:p-5">App Mode</th>
+                <th class="p-4 sm:p-5">Target Performance</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-gray-300 font-medium">
+              <tr class="hover:bg-white/[0.02]">
+                <td class="p-4 sm:p-5 font-bold text-white flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Profile A (Budget)
+                </td>
+                <td class="p-4 sm:p-5 text-gray-400">4 GB RAM, Dual-Core CPU, HDD / SATA</td>
+                <td class="p-4 sm:p-5 font-semibold text-amber-300">Low-End Mode</td>
+                <td class="p-4 sm:p-5 text-emerald-400 font-semibold">&lt; 90 MB Idle RAM, Zero UI Lag</td>
+              </tr>
+              <tr class="hover:bg-white/[0.02]">
+                <td class="p-4 sm:p-5 font-bold text-white flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-blue-400"></span> Profile B (Mid-Range)
+                </td>
+                <td class="p-4 sm:p-5 text-gray-400">8 GB RAM, Quad-Core CPU, SATA SSD</td>
+                <td class="p-4 sm:p-5 font-semibold text-blue-300">Balanced Mode</td>
+                <td class="p-4 sm:p-5 text-emerald-400 font-semibold">Instant Search, Smooth Transitions</td>
+              </tr>
+              <tr class="hover:bg-white/[0.02]">
+                <td class="p-4 sm:p-5 font-bold text-white flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span> Profile C (Modern)
+                </td>
+                <td class="p-4 sm:p-5 text-gray-400">16 GB RAM, 6-Core+ CPU, NVMe SSD</td>
+                <td class="p-4 sm:p-5 font-semibold text-indigo-300">High-Performance</td>
+                <td class="p-4 sm:p-5 text-emerald-400 font-semibold">12-Thread Parallel Scanning</td>
+              </tr>
+              <tr class="hover:bg-white/[0.02]">
+                <td class="p-4 sm:p-5 font-bold text-white flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Profile D (Workstation)
+                </td>
+                <td class="p-4 sm:p-5 text-gray-400">32 GB+ RAM, Dedicated GPU, Gen4 NVMe</td>
+                <td class="p-4 sm:p-5 font-semibold text-cyan-300">Extreme Performance</td>
+                <td class="p-4 sm:p-5 text-emerald-400 font-semibold">Instant Multi-Million File Indexing</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section id="faq" class="py-24 px-6">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-16">
+        <h2 class="text-xs uppercase font-extrabold tracking-widest text-blue-400 mb-3">Frequently Asked Questions</h2>
+        <p class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Got Questions? We've Got Answers.</p>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Q1 -->
+        <div class="glass-card rounded-2xl p-6 border-white/5">
+          <h3 class="text-base font-bold text-white mb-2">Does StorageFlow require an internet connection?</h3>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            No! StorageFlow is built from the ground up to be 100% offline. There are zero background network requests, no analytics pings, and no cloud servers. All drive analysis and file transfers happen entirely on your local machine and local Wi-Fi.
+          </p>
+        </div>
+
+        <!-- Q2 -->
+        <div class="glass-card rounded-2xl p-6 border-white/5">
+          <h3 class="text-base font-bold text-white mb-2">How does Wireless Transfer work without the cloud?</h3>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            StorageFlow spins up a secure local HTTP streaming server on your PC's Wi-Fi adapter. When you scan the QR code with your phone or tablet, your mobile device connects directly to your PC via peer-to-peer local network transfer at wire speed.
+          </p>
+        </div>
+
+        <!-- Q3 -->
+        <div class="glass-card rounded-2xl p-6 border-white/5">
+          <h3 class="text-base font-bold text-white mb-2">What Windows versions are supported?</h3>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            StorageFlow 2.0 natively supports Windows 10 (64-bit, Version 1903+) and all versions of Windows 11. It supports 100%, 125%, 150%, and 200% DPI scaling gracefully.
+          </p>
+        </div>
+
+        <!-- Q4 -->
+        <div class="glass-card rounded-2xl p-6 border-white/5">
+          <h3 class="text-base font-bold text-white mb-2">Is StorageFlow free?</h3>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            Yes! StorageFlow is 100% free and open-source. You can download the binary installer or build it yourself directly from the GitHub repository.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Download Footer CTA -->
+  <section class="py-20 px-6 border-t border-white/10 bg-gradient-to-b from-dark-850 to-dark-900 relative overflow-hidden">
+    <div class="max-w-4xl mx-auto text-center relative z-10">
+      <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight mb-6">
+        Ready to reclaim your storage?
+      </h2>
+      <p class="text-sm sm:text-base text-gray-400 mb-8 max-w-xl mx-auto">
+        Download StorageFlow 2.0 today and experience modern, offline Windows storage management.
+      </p>
+
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="https://github.com/saibalanaramsetti-cmd/Storageflow-1/releases/latest/download/StorageFlow-Setup.exe" class="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 font-extrabold text-white shadow-xl shadow-blue-500/30 hover:scale-[1.02] transition-all text-sm flex items-center justify-center gap-2">
+          <span>Download StorageFlow 2.0 (.exe)</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+        </a>
+        <a href="https://github.com/saibalanaramsetti-cmd/Storageflow-1" target="_blank" rel="noopener" class="w-full sm:w-auto px-6 py-4 rounded-2xl glass-card font-semibold text-gray-300 hover:text-white transition-all text-sm">
+          Star on GitHub ⭐
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-8 px-6 border-t border-white/5 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <p>© 2026 StorageFlow. Built with passion for Windows 10 & 11.</p>
+      <div class="flex items-center gap-6">
+        <a href="https://github.com/saibalanaramsetti-cmd/Storageflow-1" class="hover:text-blue-400 transition-colors">GitHub Repository</a>
+        <a href="https://github.com/saibalanaramsetti-cmd/Storageflow-1/releases" class="hover:text-blue-400 transition-colors">Releases</a>
+        <a href="#compatibility" class="hover:text-blue-400 transition-colors">System Requirements</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Tab Switching Script -->
+  <script>
+    const screenshots = {
+      dashboard: {
+        src: 'screenshots/dashboard.png',
+        caption: 'Real-time system telemetry, connected internal drives, battery metrics, and quick category breakdown.'
+      },
+      explorer: {
+        src: 'screenshots/explorer.jpg',
+        caption: 'High-speed File Explorer with instant directory size calculations, thumbnail previews, and folder actions.'
+      },
+      analyzer: {
+        src: 'screenshots/analyzer.png',
+        caption: 'Storage Analyzer visualizes space usage with deep hierarchical breakdowns to uncover space hogs.'
+      },
+      devices: {
+        src: 'screenshots/devices.jpg',
+        caption: 'Seamless Universal Connected Devices tab for Android phones, tablets, and MTP portable storage.'
+      },
+      wireless: {
+        src: 'screenshots/wireless.jpg',
+        caption: 'High-speed local peer-to-peer Wireless Transfer via instant QR code scanning without cables or cloud.'
+      }
+    };
+
+    function switchTab(tabKey) {
+      const data = screenshots[tabKey];
+      if (!data) return;
+
+      const img = document.getElementById('active-screenshot');
+      const caption = document.getElementById('active-caption');
+
+      img.style.opacity = '0';
+      setTimeout(() => {
+        img.src = data.src;
+        caption.innerText = data.caption;
+        img.style.opacity = '1';
+      }, 150);
+
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.classList.remove('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-500/20');
+        btn.classList.add('glass-card', 'text-gray-300');
+      });
+
+      const activeBtn = document.getElementById(`tab-${tabKey}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('glass-card', 'text-gray-300');
+        activeBtn.classList.add('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-500/20');
+      }
+    }
+  </script>
+</body>
+</html>

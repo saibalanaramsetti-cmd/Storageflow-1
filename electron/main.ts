@@ -595,12 +595,12 @@ ipcMain.handle('fs:getCategoryFiles', async (_, category: string) => {
   }
 })
 
-// Accurate recursive directory size calculation with memory caching
+// High-speed recursive directory size calculation with concurrency pool and memory caching
 const folderSizeCache = new Map<string, { size: number; fileCount: number; folderCount: number; timestamp: number }>()
 
 // Queue to limit concurrent folder size calculations to prevent disk I/O thrashing
 let activeCalculations = 0
-const MAX_CONCURRENT_SIZE_CALCS = 3
+const MAX_CONCURRENT_SIZE_CALCS = 12
 const calculationQueue: Array<() => void> = []
 
 function enqueueSizeCalc<T>(task: () => Promise<T>): Promise<T> {
@@ -644,40 +644,53 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
     let fileCount = 0
     let folderCount = 0
     let yieldCounter = 0
+    const startTime = Date.now()
+    const maxFiles = 30000
+    const timeLimitMs = 1500
 
-    const queue: string[] = [dirPath]
+    const stack: string[] = [dirPath]
+    const visited = new Set<string>()
 
     try {
-      while (queue.length > 0) {
-        const current = queue.shift()!
-        yieldCounter++
+      while (stack.length > 0) {
+        if (Date.now() - startTime > timeLimitMs || fileCount >= maxFiles) {
+          break
+        }
 
-        // Yield to event loop every 60 directories so UI never freezes
-        if (yieldCounter % 60 === 0) {
+        const current = stack.pop()!
+        const norm = current.toLowerCase()
+        if (visited.has(norm)) continue
+        visited.add(norm)
+
+        yieldCounter++
+        if (yieldCounter % 100 === 0) {
           await new Promise((r) => setImmediate(r))
         }
 
         try {
-          const entries = await fs.promises.readdir(current, { withFileTypes: true })
-          for (const item of entries) {
-            // Crucial on Windows: skip symlinks & junction points (e.g. Application Data) to prevent infinite loops
+          const entries = fs.readdirSync(current, { withFileTypes: true })
+          for (let i = 0; i < entries.length; i++) {
+            const item = entries[i]
             if (item.isSymbolicLink()) continue
 
             const itemPath = path.join(current, item.name)
-            try {
-              if (item.isDirectory()) {
-                if (item.name === '$RECYCLE.BIN' || item.name === 'System Volume Information') {
-                  continue
-                }
-                folderCount++
-                queue.push(itemPath)
-              } else if (item.isFile()) {
-                fileCount++
-                const st = await fs.promises.stat(itemPath)
-                totalSize += st.size
+            if (item.isDirectory()) {
+              const lower = item.name.toLowerCase()
+              if (
+                lower === '$recycle.bin' ||
+                lower === 'system volume information' ||
+                lower === '.git'
+              ) {
+                continue
               }
-            } catch {
-              // Permission error on individual item
+              folderCount++
+              stack.push(itemPath)
+            } else if (item.isFile()) {
+              fileCount++
+              try {
+                const st = fs.statSync(itemPath)
+                totalSize += st.size
+              } catch {}
             }
           }
         } catch {
@@ -818,21 +831,29 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
 
 ipcMain.handle('fs:readFile', async (_, filePath: string) => {
   try {
-    const stats = await fs.promises.stat(filePath)
+    let actualPath = filePath
+    if (filePath.startsWith('portable://') || filePath.startsWith('device://')) {
+      const pRes = await openPortableFileHelper(filePath)
+      if (!pRes.success || !pRes.localPath) {
+        return { success: false, error: pRes.error || 'Could not copy file from portable device' }
+      }
+      actualPath = pRes.localPath
+    }
+    const stats = await fs.promises.stat(actualPath)
     if (stats.size > 15 * 1024 * 1024) {
       return { success: false, error: 'File too large for preview (over 15MB)' }
     }
-    const ext = path.extname(filePath).toLowerCase()
+    const ext = path.extname(actualPath).toLowerCase()
     const isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'].includes(ext)
 
     if (isImage) {
-      const buffer = await fs.promises.readFile(filePath)
+      const buffer = await fs.promises.readFile(actualPath)
       const base64 = buffer.toString('base64')
       const mime = ext === '.svg' ? 'image/svg+xml' : ext === '.png' ? 'image/png' : 'image/jpeg'
       return { success: true, data: `data:${mime};base64,${base64}`, isMedia: true }
     }
 
-    const content = await fs.promises.readFile(filePath, 'utf-8')
+    const content = await fs.promises.readFile(actualPath, 'utf-8')
     return { success: true, data: content, isMedia: false }
   } catch (error: any) {
     return { success: false, error: error.message }
@@ -1297,24 +1318,31 @@ $destFolder = $sh.NameSpace($cacheDir)
 $destFolder.CopyHere($target, 16)
 
 $foundFile = $null
-$candidates = Get-ChildItem -Path $cacheDir | Where-Object { $_.BaseName -eq $fileName -or $_.Name -eq $fileName -or $_.Name -like "$fileName*" } | Sort-Object LastWriteTime -Descending
-if ($candidates -and $candidates.Count -gt 0) {
-    $foundFile = $candidates[0].FullName
-    $hasExt = [System.IO.Path]::GetExtension($foundFile)
-    if ((-not $hasExt -or $hasExt -eq "") -and $inferredExt) {
-        $renamed = $foundFile + $inferredExt
-        Rename-Item -LiteralPath $foundFile -NewName ([System.IO.Path]::GetFileName($renamed)) -Force -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $renamed) {
-            $foundFile = $renamed
+# Poll for up to 3.5 seconds for the asynchronous Shell CopyHere to write the file into cacheDir
+for ($attempt = 0; $attempt -lt 25; $attempt++) {
+    $candidates = Get-ChildItem -Path $cacheDir | Where-Object { $_.BaseName -eq $fileName -or $_.Name -eq $fileName -or $_.Name -like "$fileName*" } | Sort-Object LastWriteTime -Descending
+    if ($candidates -and $candidates.Count -gt 0) {
+        $candidate = $candidates[0]
+        if ($candidate.Length -gt 0 -or $attempt -ge 6) {
+            $foundFile = $candidate.FullName
+            $hasExt = [System.IO.Path]::GetExtension($foundFile)
+            if ((-not $hasExt -or $hasExt -eq "") -and $inferredExt) {
+                $renamed = $foundFile + $inferredExt
+                Rename-Item -LiteralPath $foundFile -NewName ([System.IO.Path]::GetFileName($renamed)) -Force -ErrorAction SilentlyContinue
+                if (Test-Path -LiteralPath $renamed) {
+                    $foundFile = $renamed
+                }
+            }
+            break
         }
     }
+    Start-Sleep -Milliseconds 140
 }
 
 if ($foundFile) {
     Write-Output ([PSCustomObject]@{ localPath = $foundFile } | ConvertTo-Json -Compress)
 } else {
-    $target.InvokeVerb("open")
-    Write-Output '{"opened": true}'
+    Write-Output '{"error": "Device is busy or could not extract file. Please unlock your phone/device and try again."}'
 }
 `
     const encoded = Buffer.from(ps, 'utf16le').toString('base64')
@@ -1349,6 +1377,9 @@ ipcMain.handle('shell:openFile', async (_, filePath: string) => {
 })
 
 ipcMain.handle('shell:showInFolder', (_, filePath: string) => {
+  if (filePath.startsWith('portable://') || filePath.startsWith('device://')) {
+    return { success: true }
+  }
   shell.showItemInFolder(filePath)
   return { success: true }
 })

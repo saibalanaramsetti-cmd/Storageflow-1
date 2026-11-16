@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -99,6 +99,8 @@ export function FileExplorer() {
 
   // Folder Sizes & Hierarchical Tree State
   const [folderSizes, setFolderSizes] = useState<Record<string, number>>({})
+  const folderSizesRef = useRef<Record<string, number>>({})
+  folderSizesRef.current = folderSizes
   const [treeData, setTreeData] = useState<any>(null)
   const [treeLoading, setTreeLoading] = useState<boolean>(false)
 
@@ -292,43 +294,6 @@ export function FileExplorer() {
     }
   }, [currentPath, loadDirectory])
 
-  // Automatically calculate real folder consumption sizes asynchronously in batches
-  useEffect(() => {
-    let active = true
-    const dirItems = items.filter((i) => i.type === 'directory' && !i.path.startsWith('portable://'))
-    if (dirItems.length === 0) return
-
-    let pendingUpdates: Record<string, number> = {}
-    let timer: any = null
-
-    const flush = () => {
-      if (!active || Object.keys(pendingUpdates).length === 0) return
-      setFolderSizes((prev) => ({ ...prev, ...pendingUpdates }))
-      pendingUpdates = {}
-    }
-
-    dirItems.forEach(async (dir) => {
-      try {
-        const res = await window.electronAPI?.fs.getFolderSize(dir.path)
-        if (active && res?.success && res.size !== undefined) {
-          pendingUpdates[dir.path] = res.size
-          if (!timer) {
-            timer = setTimeout(() => {
-              flush()
-              timer = null
-            }, 200)
-          }
-        }
-      } catch {}
-    })
-
-    return () => {
-      active = false
-      if (timer) clearTimeout(timer)
-      flush()
-    }
-  }, [items])
-
   // Automatically load tree breakdown when Tree View is selected
   useEffect(() => {
     if (viewMode === 'tree' && currentPath) {
@@ -475,6 +440,53 @@ export function FileExplorer() {
   const visibleItems = useMemo(() => {
     return processedItems.slice(0, renderLimit)
   }, [processedItems, renderLimit])
+
+  // Automatically calculate real folder consumption sizes asynchronously in batches
+  useEffect(() => {
+    let active = true
+    const dirItems = items.filter((i) => i.type === 'directory' && !i.path.startsWith('portable://'))
+    if (dirItems.length === 0) return
+
+    // Priority: compute sizes for currently visible directories first to make UI feel instant
+    const visiblePathSet = new Set(visibleItems.map((v) => v.path))
+    const currentSizes = folderSizesRef.current
+    const prioritizedDirs = [
+      ...dirItems.filter((d) => visiblePathSet.has(d.path) && currentSizes[d.path] === undefined),
+      ...dirItems.filter((d) => !visiblePathSet.has(d.path) && currentSizes[d.path] === undefined),
+    ]
+
+    if (prioritizedDirs.length === 0) return
+
+    let pendingUpdates: Record<string, number> = {}
+    let timer: any = null
+
+    const flush = () => {
+      if (!active || Object.keys(pendingUpdates).length === 0) return
+      setFolderSizes((prev) => ({ ...prev, ...pendingUpdates }))
+      pendingUpdates = {}
+    }
+
+    prioritizedDirs.forEach(async (dir) => {
+      try {
+        const res = await window.electronAPI?.fs.getFolderSize(dir.path)
+        if (active && res?.success && res.size !== undefined) {
+          pendingUpdates[dir.path] = res.size
+          if (!timer) {
+            timer = setTimeout(() => {
+              flush()
+              timer = null
+            }, 80)
+          }
+        }
+      } catch {}
+    })
+
+    return () => {
+      active = false
+      if (timer) clearTimeout(timer)
+      flush()
+    }
+  }, [items, visibleItems])
 
   // Selection handlers
   const toggleSelect = (itemPath: string, multi = false) => {
@@ -683,7 +695,10 @@ export function FileExplorer() {
           const target = items.find((i) => i.path === p)
           if (target) {
             if (target.type === 'directory') navigateTo(target.path)
-            else window.electronAPI?.shell.openFile(target.path)
+            else {
+              if (target.path.startsWith('portable://')) showToast(`Opening "${target.name}"... ⏳`)
+              window.electronAPI?.shell.openFile(target.path)
+            }
           }
         }
         return
@@ -1481,7 +1496,11 @@ export function FileExplorer() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => previewItem && window.electronAPI?.shell.openFile(previewItem.path)}
+              onClick={() => {
+                if (!previewItem) return
+                if (previewItem.path.startsWith('portable://')) showToast(`Opening "${previewItem.name}"... ⏳`)
+                window.electronAPI?.shell.openFile(previewItem.path)
+              }}
               icon={<ExternalLink size={12} />}
             >
               Open with Default App
@@ -1678,7 +1697,10 @@ export function FileExplorer() {
             onClose={() => setContextMenu(null)}
             onOpen={(item) => {
               if (item.type === 'directory') navigateTo(item.path)
-              else window.electronAPI?.shell.openFile(item.path)
+              else {
+                if (item.path.startsWith('portable://')) showToast(`Opening "${item.name}"... ⏳`)
+                window.electronAPI?.shell.openFile(item.path)
+              }
             }}
             onCut={(item) => {
               setClipboard({ paths: [item.path], operation: 'cut' })

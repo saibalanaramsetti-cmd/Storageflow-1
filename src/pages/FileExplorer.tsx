@@ -458,54 +458,45 @@ export function FileExplorer() {
     ]
 
     if (uncachedDirs.length === 0) return
-    const uncachedPaths = uncachedDirs.map((d) => d.path)
 
-    // Ultra-fast parallel batch calculation
-    const electronFs = (window as any).electronAPI?.fs
-    if (electronFs?.getFolderSizesBatch) {
-      electronFs
-        .getFolderSizesBatch(uncachedPaths)
-        .then((res: any) => {
-          if (currentPathRef.current === pathAtStart && res?.success && res.data) {
-            setFolderSizes((prev: Record<string, number>) => ({ ...prev, ...res.data }))
-          }
-        })
-        .catch(() => {})
-    } else {
-      let pendingUpdates: Record<string, number> = {}
-      let timer: any = null
+    let pendingUpdates: Record<string, number> = {}
+    let timer: any = null
 
-      const flush = () => {
-        if (currentPathRef.current !== pathAtStart || Object.keys(pendingUpdates).length === 0) return
-        setFolderSizes((prev) => ({ ...prev, ...pendingUpdates }))
-        pendingUpdates = {}
-      }
+    const flush = () => {
+      if (currentPathRef.current !== pathAtStart || Object.keys(pendingUpdates).length === 0) return
+      setFolderSizes((prev: Record<string, number>) => ({ ...prev, ...pendingUpdates }))
+      pendingUpdates = {}
+    }
 
-      uncachedDirs.forEach(async (dir) => {
-        try {
-          const res = await window.electronAPI?.fs.getFolderSize(dir.path)
-          if (currentPathRef.current === pathAtStart) {
-            const sz = res && typeof res.size === 'number' ? res.size : 0
-            pendingUpdates[dir.path] = sz
-            if (!timer) {
-              timer = setTimeout(() => {
-                flush()
-                timer = null
-              }, 40)
-            }
-          }
-        } catch {
-          if (currentPathRef.current === pathAtStart) {
-            pendingUpdates[dir.path] = 0
-            if (!timer) {
-              timer = setTimeout(() => {
-                flush()
-                timer = null
-              }, 40)
-            }
+    uncachedDirs.forEach(async (dir) => {
+      try {
+        const res = await window.electronAPI?.fs.getFolderSize(dir.path)
+        if (currentPathRef.current === pathAtStart) {
+          const sz = res && typeof res.size === 'number' ? res.size : 0
+          pendingUpdates[dir.path] = sz
+          if (!timer) {
+            timer = setTimeout(() => {
+              flush()
+              timer = null
+            }, 50)
           }
         }
-      })
+      } catch {
+        if (currentPathRef.current === pathAtStart) {
+          pendingUpdates[dir.path] = 0
+          if (!timer) {
+            timer = setTimeout(() => {
+              flush()
+              timer = null
+            }, 50)
+          }
+        }
+      }
+    })
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      flush()
     }
   }, [currentPath, items, renderLimit])
 

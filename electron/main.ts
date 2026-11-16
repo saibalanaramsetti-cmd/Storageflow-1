@@ -595,13 +595,13 @@ ipcMain.handle('fs:getCategoryFiles', async (_, category: string) => {
   }
 })
 
-// High-speed recursive directory size calculation with in-flight deduplication and memory caching
+// High-speed accurate recursive directory size calculation with async I/O and memory caching
 const folderSizeCache = new Map<string, { size: number; fileCount: number; folderCount: number; timestamp: number }>()
 const inFlightCalculations = new Map<string, Promise<{ success: boolean; size: number; fileCount: number; folderCount: number }>>()
 
-async function calculateDirectorySizeFast(dirPath: string): Promise<{ success: boolean; size: number; fileCount: number; folderCount: number }> {
+async function calculateRealFolderSize(dirPath: string): Promise<{ success: boolean; size: number; fileCount: number; folderCount: number }> {
   const cached = folderSizeCache.get(dirPath)
-  if (cached && Date.now() - cached.timestamp < 300000) {
+  if (cached && Date.now() - cached.timestamp < 600000) {
     return { success: true, size: cached.size, fileCount: cached.fileCount, folderCount: cached.folderCount }
   }
 
@@ -619,66 +619,64 @@ async function calculateDirectorySizeFast(dirPath: string): Promise<{ success: b
     let totalSize = 0
     let fileCount = 0
     let folderCount = 0
-    let yieldCounter = 0
-    const startTime = Date.now()
-    const maxFiles = 20000
-    const timeLimitMs = 400 // Lightning fast 400ms cap per folder
-
-    const stack: { p: string; d: number }[] = [{ p: dirPath, d: 0 }]
     const visited = new Set<string>()
 
-    try {
-      while (stack.length > 0) {
-        if (Date.now() - startTime > timeLimitMs || fileCount >= maxFiles) {
-          break
-        }
+    async function walk(current: string) {
+      const norm = current.toLowerCase()
+      if (visited.has(norm)) return
+      visited.add(norm)
 
-        const { p: current, d: depth } = stack.pop()!
-        if (depth > 6) continue
+      try {
+        const entries = await fs.promises.readdir(current, { withFileTypes: true })
+        const files: string[] = []
+        const subdirs: string[] = []
+        const base = current.endsWith('\\') || current.endsWith('/') ? current : current + path.sep
 
-        const norm = current.toLowerCase()
-        if (visited.has(norm)) continue
-        visited.add(norm)
+        for (let i = 0; i < entries.length; i++) {
+          const item = entries[i]
+          if (item.isSymbolicLink()) continue
+          const full = base + item.name
 
-        yieldCounter++
-        if (yieldCounter % 40 === 0) {
-          await new Promise((r) => setImmediate(r))
-        }
-
-        try {
-          const entries = fs.readdirSync(current, { withFileTypes: true })
-          for (let i = 0; i < entries.length; i++) {
-            const item = entries[i]
-            if (item.isSymbolicLink()) continue
-
-            const itemPath = path.join(current, item.name)
-            if (item.isDirectory()) {
-              const lower = item.name.toLowerCase()
-              if (
-                lower === '$recycle.bin' ||
-                lower === 'system volume information' ||
-                lower === 'recovery' ||
-                lower === '.git' ||
-                lower === 'node_modules' ||
-                lower === 'application data'
-              ) {
-                continue
-              }
-              folderCount++
-              stack.push({ p: itemPath, d: depth + 1 })
-            } else if (item.isFile()) {
-              fileCount++
-              try {
-                const st = fs.statSync(itemPath)
-                totalSize += st.size
-              } catch {}
+          if (item.isDirectory()) {
+            const l = item.name.toLowerCase()
+            if (
+              l === '$recycle.bin' ||
+              l === 'system volume information' ||
+              l === 'recovery' ||
+              l === 'application data'
+            ) {
+              continue
             }
+            folderCount++
+            subdirs.push(full)
+          } else if (item.isFile()) {
+            files.push(full)
           }
-        } catch {
-          // Permission error on directory
         }
-      }
 
+        // Parallel async stats for all files in this directory
+        const stats = await Promise.all(
+          files.map((f) => fs.promises.stat(f).catch(() => null))
+        )
+        for (let i = 0; i < stats.length; i++) {
+          const st = stats[i]
+          if (st) {
+            totalSize += st.size
+            fileCount++
+          }
+        }
+
+        // Concurrently recurse subdirectories in chunks of 6
+        for (let i = 0; i < subdirs.length; i += 6) {
+          await Promise.all(subdirs.slice(i, i + 6).map((s) => walk(s)))
+        }
+      } catch {
+        // Permission denied or locked directory
+      }
+    }
+
+    try {
+      await walk(dirPath)
       const res = {
         size: totalSize,
         fileCount,
@@ -688,7 +686,7 @@ async function calculateDirectorySizeFast(dirPath: string): Promise<{ success: b
       folderSizeCache.set(dirPath, res)
       return { success: true, size: totalSize, fileCount, folderCount }
     } catch (error: any) {
-      return { success: true, size: 0, fileCount: 0, folderCount: 0 }
+      return { success: true, size: totalSize, fileCount, folderCount }
     } finally {
       inFlightCalculations.delete(dirPath)
     }
@@ -699,18 +697,18 @@ async function calculateDirectorySizeFast(dirPath: string): Promise<{ success: b
 }
 
 ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
-  return await calculateDirectorySizeFast(dirPath)
+  return await calculateRealFolderSize(dirPath)
 })
 
 ipcMain.handle('fs:getFolderSizesBatch', async (_, dirPaths: string[]) => {
   if (!Array.isArray(dirPaths) || dirPaths.length === 0) return { success: true, data: {} }
   const results: Record<string, number> = {}
 
-  // Run with concurrency pool of 8
-  const concurrency = 8
+  // Run with concurrency pool of 6
+  const concurrency = 6
   for (let i = 0; i < dirPaths.length; i += concurrency) {
     const chunk = dirPaths.slice(i, i + concurrency)
-    const chunkResults = await Promise.all(chunk.map((p) => calculateDirectorySizeFast(p)))
+    const chunkResults = await Promise.all(chunk.map((p) => calculateRealFolderSize(p)))
     chunk.forEach((p, idx) => {
       results[p] = chunkResults[idx]?.size ?? 0
     })

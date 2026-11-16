@@ -101,6 +101,8 @@ export function FileExplorer() {
   const [folderSizes, setFolderSizes] = useState<Record<string, number>>({})
   const folderSizesRef = useRef<Record<string, number>>({})
   folderSizesRef.current = folderSizes
+  const currentPathRef = useRef<string>(currentPath)
+  currentPathRef.current = currentPath
   const [treeData, setTreeData] = useState<any>(null)
   const [treeLoading, setTreeLoading] = useState<boolean>(false)
 
@@ -434,7 +436,7 @@ export function FileExplorer() {
     })
 
     return result
-  }, [items, debouncedQuery, sortField, sortOrder, folderSizes])
+  }, [items, debouncedQuery, sortField, sortOrder, sortField === 'size' ? folderSizes : null])
 
   // Windowed / Chunked visible slice for instantaneous rendering of large folders
   const visibleItems = useMemo(() => {
@@ -443,12 +445,12 @@ export function FileExplorer() {
 
   // Automatically calculate real folder consumption sizes asynchronously in batches
   useEffect(() => {
-    let active = true
+    const pathAtStart = currentPath
     const dirItems = items.filter((i) => i.type === 'directory' && !i.path.startsWith('portable://'))
     if (dirItems.length === 0) return
 
     // Priority: compute sizes for currently visible directories first to make UI feel instant
-    const visiblePathSet = new Set(visibleItems.map((v) => v.path))
+    const visiblePathSet = new Set(items.slice(0, renderLimit).map((v) => v.path))
     const currentSizes = folderSizesRef.current
     const prioritizedDirs = [
       ...dirItems.filter((d) => visiblePathSet.has(d.path) && currentSizes[d.path] === undefined),
@@ -461,7 +463,7 @@ export function FileExplorer() {
     let timer: any = null
 
     const flush = () => {
-      if (!active || Object.keys(pendingUpdates).length === 0) return
+      if (currentPathRef.current !== pathAtStart || Object.keys(pendingUpdates).length === 0) return
       setFolderSizes((prev) => ({ ...prev, ...pendingUpdates }))
       pendingUpdates = {}
     }
@@ -469,24 +471,35 @@ export function FileExplorer() {
     prioritizedDirs.forEach(async (dir) => {
       try {
         const res = await window.electronAPI?.fs.getFolderSize(dir.path)
-        if (active && res?.success && res.size !== undefined) {
-          pendingUpdates[dir.path] = res.size
+        if (currentPathRef.current === pathAtStart) {
+          // If restricted, protected, or completed, save size (0 if inaccessible) so it never hangs on "Calculating..."
+          const sz = (res && typeof res.size === 'number') ? res.size : 0
+          pendingUpdates[dir.path] = sz
           if (!timer) {
             timer = setTimeout(() => {
               flush()
               timer = null
-            }, 80)
+            }, 50)
           }
         }
-      } catch {}
+      } catch {
+        if (currentPathRef.current === pathAtStart) {
+          pendingUpdates[dir.path] = 0
+          if (!timer) {
+            timer = setTimeout(() => {
+              flush()
+              timer = null
+            }, 50)
+          }
+        }
+      }
     })
 
     return () => {
-      active = false
       if (timer) clearTimeout(timer)
       flush()
     }
-  }, [items, visibleItems])
+  }, [currentPath, items, renderLimit])
 
   // Selection handlers
   const toggleSelect = (itemPath: string, multi = false) => {

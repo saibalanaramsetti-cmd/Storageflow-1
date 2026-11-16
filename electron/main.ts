@@ -640,6 +640,12 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
       return { success: true, size: cachedAgain.size, fileCount: cachedAgain.fileCount, folderCount: cachedAgain.folderCount }
     }
 
+    // Immediate bypass for Windows OS protected system directories
+    const baseName = path.basename(dirPath).toLowerCase()
+    if (baseName === 'system volume information' || baseName === 'recovery') {
+      return { success: true, size: 0, fileCount: 0, folderCount: 0 }
+    }
+
     let totalSize = 0
     let fileCount = 0
     let folderCount = 0
@@ -663,7 +669,7 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
         visited.add(norm)
 
         yieldCounter++
-        if (yieldCounter % 100 === 0) {
+        if (yieldCounter % 50 === 0) {
           await new Promise((r) => setImmediate(r))
         }
 
@@ -679,7 +685,9 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
               if (
                 lower === '$recycle.bin' ||
                 lower === 'system volume information' ||
-                lower === '.git'
+                lower === 'recovery' ||
+                lower === '.git' ||
+                lower === 'application data'
               ) {
                 continue
               }
@@ -707,7 +715,7 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
 
       return { success: true, size: totalSize, fileCount, folderCount }
     } catch (error: any) {
-      return { success: false, error: error.message }
+      return { success: true, size: 0, fileCount: 0, folderCount: 0, error: error.message }
     }
   })
 })

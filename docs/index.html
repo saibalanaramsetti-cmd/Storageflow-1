@@ -197,7 +197,7 @@
             <div class="text-[11px] text-gray-500 font-mono">Offline • Windows 11 Fluent Glass</div>
           </div>
           <!-- Hero Image -->
-          <img src="screenshots/dashboard.png" alt="StorageFlow Dashboard" class="w-full h-auto object-cover">
+          <img src="screenshots/dashboard.jpg" alt="StorageFlow Dashboard" class="w-full h-auto object-cover">
         </div>
       </div>
     </div>
@@ -328,23 +328,20 @@
           Dashboard
         </button>
         <button onclick="switchTab('explorer')" id="tab-explorer" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
-          File Explorer
+          File Explorer (Calculated Sizes)
         </button>
         <button onclick="switchTab('analyzer')" id="tab-analyzer" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
-          Storage Breakdown
-        </button>
-        <button onclick="switchTab('devices')" id="tab-devices" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
-          Portable Devices
+          Storage Breakdown Tree
         </button>
         <button onclick="switchTab('wireless')" id="tab-wireless" class="tab-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all glass-card hover:bg-white/10 text-gray-300">
-          Wireless Sharing
+          Wireless Direct Sharing
         </button>
       </div>
 
       <!-- Screenshot Display Box -->
       <div class="relative rounded-3xl p-3 glass-card border-white/15 glow-blue overflow-hidden max-w-5xl mx-auto">
         <div id="screenshot-container" class="rounded-2xl overflow-hidden bg-black/60 aspect-[16/10] flex items-center justify-center">
-          <img id="active-screenshot" src="screenshots/dashboard.png" alt="StorageFlow Screenshot" class="w-full h-full object-contain transition-opacity duration-300">
+          <img id="active-screenshot" src="screenshots/dashboard.jpg" alt="StorageFlow Screenshot" class="w-full h-full object-contain transition-opacity duration-300">
         </div>
         <div id="active-caption" class="p-4 text-center text-xs font-medium text-gray-400 border-t border-white/5 mt-2">
           Real-time system telemetry, connected internal drives, battery metrics, and quick category breakdown.
@@ -494,24 +491,20 @@
   <script>
     const screenshots = {
       dashboard: {
-        src: 'screenshots/dashboard.png',
-        caption: 'Real-time system telemetry, connected internal drives, battery metrics, and quick category breakdown.'
+        src: 'screenshots/dashboard.jpg',
+        caption: 'StorageFlow 2.0 Dashboard — System overview, real-time drive metrics, connected Android phone, and quick category breakdown.'
       },
       explorer: {
         src: 'screenshots/explorer.jpg',
-        caption: 'High-speed File Explorer with instant directory size calculations, thumbnail previews, and folder actions.'
+        caption: 'High-speed File Explorer — Real-time folder size calculations (Windows 41.6 GB, Riot Games 33.5 GB, Program Files 21.1 GB, Users 131.9 GB).'
       },
       analyzer: {
-        src: 'screenshots/analyzer.png',
-        caption: 'Storage Analyzer visualizes space usage with deep hierarchical breakdowns to uncover space hogs.'
-      },
-      devices: {
-        src: 'screenshots/devices.jpg',
-        caption: 'Seamless Universal Connected Devices tab for Android phones, tablets, and MTP portable storage.'
+        src: 'screenshots/analyzer.jpg',
+        caption: 'Storage Analyzer — Deep recursive disk inspection (128.9 GB analyzed across 405,900 files and 170,725 subdirectories).'
       },
       wireless: {
         src: 'screenshots/wireless.jpg',
-        caption: 'High-speed local peer-to-peer Wireless Transfer via instant QR code scanning without cables or cloud.'
+        caption: 'Wireless Direct Transfer — Seamless high-speed local Wi-Fi transfer between PC and Android without internet or cloud.'
       }
     };
 

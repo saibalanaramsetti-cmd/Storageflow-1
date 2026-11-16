@@ -20,6 +20,7 @@ const api = {
     readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
     getThumbnail: (filePath: string) => ipcRenderer.invoke('fs:getThumbnail', filePath),
     getFolderSize: (dirPath: string) => ipcRenderer.invoke('fs:getFolderSize', dirPath),
+    getFolderSizesBatch: (dirPaths: string[]) => ipcRenderer.invoke('fs:getFolderSizesBatch', dirPaths),
     getDrives: () => ipcRenderer.invoke('fs:getDrives'),
     getConnectedDevices: () => ipcRenderer.invoke('fs:getConnectedDevices'),
     openDeviceInExplorer: (deviceName: string) => ipcRenderer.invoke('fs:openDeviceInExplorer', deviceName),

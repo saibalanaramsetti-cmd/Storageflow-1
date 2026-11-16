@@ -443,7 +443,7 @@ export function FileExplorer() {
     return processedItems.slice(0, renderLimit)
   }, [processedItems, renderLimit])
 
-  // Automatically calculate real folder consumption sizes asynchronously in batches
+  // Automatically calculate real folder consumption sizes asynchronously in high-speed batches
   useEffect(() => {
     const pathAtStart = currentPath
     const dirItems = items.filter((i) => i.type === 'directory' && !i.path.startsWith('portable://'))
@@ -452,52 +452,60 @@ export function FileExplorer() {
     // Priority: compute sizes for currently visible directories first to make UI feel instant
     const visiblePathSet = new Set(items.slice(0, renderLimit).map((v) => v.path))
     const currentSizes = folderSizesRef.current
-    const prioritizedDirs = [
+    const uncachedDirs = [
       ...dirItems.filter((d) => visiblePathSet.has(d.path) && currentSizes[d.path] === undefined),
       ...dirItems.filter((d) => !visiblePathSet.has(d.path) && currentSizes[d.path] === undefined),
     ]
 
-    if (prioritizedDirs.length === 0) return
+    if (uncachedDirs.length === 0) return
+    const uncachedPaths = uncachedDirs.map((d) => d.path)
 
-    let pendingUpdates: Record<string, number> = {}
-    let timer: any = null
-
-    const flush = () => {
-      if (currentPathRef.current !== pathAtStart || Object.keys(pendingUpdates).length === 0) return
-      setFolderSizes((prev) => ({ ...prev, ...pendingUpdates }))
-      pendingUpdates = {}
-    }
-
-    prioritizedDirs.forEach(async (dir) => {
-      try {
-        const res = await window.electronAPI?.fs.getFolderSize(dir.path)
-        if (currentPathRef.current === pathAtStart) {
-          // If restricted, protected, or completed, save size (0 if inaccessible) so it never hangs on "Calculating..."
-          const sz = (res && typeof res.size === 'number') ? res.size : 0
-          pendingUpdates[dir.path] = sz
-          if (!timer) {
-            timer = setTimeout(() => {
-              flush()
-              timer = null
-            }, 50)
+    // Ultra-fast parallel batch calculation
+    const electronFs = (window as any).electronAPI?.fs
+    if (electronFs?.getFolderSizesBatch) {
+      electronFs
+        .getFolderSizesBatch(uncachedPaths)
+        .then((res: any) => {
+          if (currentPathRef.current === pathAtStart && res?.success && res.data) {
+            setFolderSizes((prev: Record<string, number>) => ({ ...prev, ...res.data }))
           }
-        }
-      } catch {
-        if (currentPathRef.current === pathAtStart) {
-          pendingUpdates[dir.path] = 0
-          if (!timer) {
-            timer = setTimeout(() => {
-              flush()
-              timer = null
-            }, 50)
-          }
-        }
+        })
+        .catch(() => {})
+    } else {
+      let pendingUpdates: Record<string, number> = {}
+      let timer: any = null
+
+      const flush = () => {
+        if (currentPathRef.current !== pathAtStart || Object.keys(pendingUpdates).length === 0) return
+        setFolderSizes((prev) => ({ ...prev, ...pendingUpdates }))
+        pendingUpdates = {}
       }
-    })
 
-    return () => {
-      if (timer) clearTimeout(timer)
-      flush()
+      uncachedDirs.forEach(async (dir) => {
+        try {
+          const res = await window.electronAPI?.fs.getFolderSize(dir.path)
+          if (currentPathRef.current === pathAtStart) {
+            const sz = res && typeof res.size === 'number' ? res.size : 0
+            pendingUpdates[dir.path] = sz
+            if (!timer) {
+              timer = setTimeout(() => {
+                flush()
+                timer = null
+              }, 40)
+            }
+          }
+        } catch {
+          if (currentPathRef.current === pathAtStart) {
+            pendingUpdates[dir.path] = 0
+            if (!timer) {
+              timer = setTimeout(() => {
+                flush()
+                timer = null
+              }, 40)
+            }
+          }
+        }
+      })
     }
   }, [currentPath, items, renderLimit])
 

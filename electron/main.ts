@@ -595,54 +595,24 @@ ipcMain.handle('fs:getCategoryFiles', async (_, category: string) => {
   }
 })
 
-// High-speed recursive directory size calculation with concurrency pool and memory caching
+// High-speed recursive directory size calculation with in-flight deduplication and memory caching
 const folderSizeCache = new Map<string, { size: number; fileCount: number; folderCount: number; timestamp: number }>()
+const inFlightCalculations = new Map<string, Promise<{ success: boolean; size: number; fileCount: number; folderCount: number }>>()
 
-// Queue to limit concurrent folder size calculations to prevent disk I/O thrashing
-let activeCalculations = 0
-const MAX_CONCURRENT_SIZE_CALCS = 12
-const calculationQueue: Array<() => void> = []
-
-function enqueueSizeCalc<T>(task: () => Promise<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const execute = () => {
-      activeCalculations++
-      task()
-        .then(resolve)
-        .catch(reject)
-        .finally(() => {
-          activeCalculations--
-          if (calculationQueue.length > 0) {
-            const next = calculationQueue.shift()
-            if (next) next()
-          }
-        })
-    }
-
-    if (activeCalculations < MAX_CONCURRENT_SIZE_CALCS) {
-      execute()
-    } else {
-      calculationQueue.push(execute)
-    }
-  })
-}
-
-ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
+async function calculateDirectorySizeFast(dirPath: string): Promise<{ success: boolean; size: number; fileCount: number; folderCount: number }> {
   const cached = folderSizeCache.get(dirPath)
   if (cached && Date.now() - cached.timestamp < 300000) {
     return { success: true, size: cached.size, fileCount: cached.fileCount, folderCount: cached.folderCount }
   }
 
-  return enqueueSizeCalc(async () => {
-    // Check cache again after entering queue
-    const cachedAgain = folderSizeCache.get(dirPath)
-    if (cachedAgain && Date.now() - cachedAgain.timestamp < 300000) {
-      return { success: true, size: cachedAgain.size, fileCount: cachedAgain.fileCount, folderCount: cachedAgain.folderCount }
-    }
+  if (inFlightCalculations.has(dirPath)) {
+    return inFlightCalculations.get(dirPath)!
+  }
 
+  const promise = (async () => {
     // Immediate bypass for Windows OS protected system directories
     const baseName = path.basename(dirPath).toLowerCase()
-    if (baseName === 'system volume information' || baseName === 'recovery') {
+    if (baseName === 'system volume information' || baseName === 'recovery' || baseName === 'oem') {
       return { success: true, size: 0, fileCount: 0, folderCount: 0 }
     }
 
@@ -651,10 +621,10 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
     let folderCount = 0
     let yieldCounter = 0
     const startTime = Date.now()
-    const maxFiles = 30000
-    const timeLimitMs = 1500
+    const maxFiles = 20000
+    const timeLimitMs = 400 // Lightning fast 400ms cap per folder
 
-    const stack: string[] = [dirPath]
+    const stack: { p: string; d: number }[] = [{ p: dirPath, d: 0 }]
     const visited = new Set<string>()
 
     try {
@@ -663,13 +633,15 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
           break
         }
 
-        const current = stack.pop()!
+        const { p: current, d: depth } = stack.pop()!
+        if (depth > 6) continue
+
         const norm = current.toLowerCase()
         if (visited.has(norm)) continue
         visited.add(norm)
 
         yieldCounter++
-        if (yieldCounter % 50 === 0) {
+        if (yieldCounter % 40 === 0) {
           await new Promise((r) => setImmediate(r))
         }
 
@@ -687,12 +659,13 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
                 lower === 'system volume information' ||
                 lower === 'recovery' ||
                 lower === '.git' ||
+                lower === 'node_modules' ||
                 lower === 'application data'
               ) {
                 continue
               }
               folderCount++
-              stack.push(itemPath)
+              stack.push({ p: itemPath, d: depth + 1 })
             } else if (item.isFile()) {
               fileCount++
               try {
@@ -706,18 +679,44 @@ ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
         }
       }
 
-      folderSizeCache.set(dirPath, {
+      const res = {
         size: totalSize,
         fileCount,
         folderCount,
         timestamp: Date.now()
-      })
-
+      }
+      folderSizeCache.set(dirPath, res)
       return { success: true, size: totalSize, fileCount, folderCount }
     } catch (error: any) {
-      return { success: true, size: 0, fileCount: 0, folderCount: 0, error: error.message }
+      return { success: true, size: 0, fileCount: 0, folderCount: 0 }
+    } finally {
+      inFlightCalculations.delete(dirPath)
     }
-  })
+  })()
+
+  inFlightCalculations.set(dirPath, promise)
+  return promise
+}
+
+ipcMain.handle('fs:getFolderSize', async (_, dirPath: string) => {
+  return await calculateDirectorySizeFast(dirPath)
+})
+
+ipcMain.handle('fs:getFolderSizesBatch', async (_, dirPaths: string[]) => {
+  if (!Array.isArray(dirPaths) || dirPaths.length === 0) return { success: true, data: {} }
+  const results: Record<string, number> = {}
+
+  // Run with concurrency pool of 8
+  const concurrency = 8
+  for (let i = 0; i < dirPaths.length; i += concurrency) {
+    const chunk = dirPaths.slice(i, i + concurrency)
+    const chunkResults = await Promise.all(chunk.map((p) => calculateDirectorySizeFast(p)))
+    chunk.forEach((p, idx) => {
+      results[p] = chunkResults[idx]?.size ?? 0
+    })
+  }
+
+  return { success: true, data: results }
 })
 
 ipcMain.handle('fs:createDir', async (_, dirPath: string) => {

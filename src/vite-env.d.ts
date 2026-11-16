@@ -1,5 +1,17 @@
 /// <reference types="vite/client" />
 
+interface HardwareProfile {
+  cpuModel: string
+  cpuCores: number
+  totalRamGB: number
+  freeRamGB: number
+  osName: string
+  osRelease: string
+  displayResolution: string
+  scaleFactor: number
+  recommendedProfile: 'low-end' | 'balanced' | 'high-performance'
+}
+
 interface Window {
   electronAPI?: {
     window: {
@@ -8,7 +20,8 @@ interface Window {
       close: () => void
     }
     fs: {
-      readDir: (path: string) => Promise<{ success: boolean; data?: any[]; error?: string }>
+      readDir: (path: string) => Promise<{ success: boolean; data?: any[]; error?: string; isPortableDevice?: boolean; deviceName?: string; isEmptyOrLocked?: boolean }>
+      getCategoryFiles: (category: string) => Promise<{ success: boolean; data?: any[]; error?: string }>
       createDir: (path: string) => Promise<{ success: boolean; error?: string }>
       rename: (oldPath: string, newPath: string) => Promise<{ success: boolean; error?: string }>
       delete: (path: string) => Promise<{ success: boolean; error?: string }>
@@ -21,23 +34,41 @@ interface Window {
       getThumbnail: (path: string) => Promise<{ success: boolean; data?: string }>
       getFolderSize: (path: string) => Promise<{ success: boolean; size?: number; error?: string }>
       getDrives: () => Promise<{ success: boolean; data?: any[]; error?: string }>
+      getConnectedDevices: () => Promise<{ success: boolean; data?: any[]; error?: string }>
+      openDeviceInExplorer: (deviceName: string) => Promise<{ success: boolean; error?: string }>
+      readPortableDevice: (deviceName: string, subPath?: string) => Promise<{ success: boolean; data?: any[]; error?: string; isPortableDevice?: boolean; deviceName?: string; isEmptyOrLocked?: boolean }>
+      compressToZip: (path: string) => Promise<{ success: boolean; zipPath?: string; error?: string }>
     }
     analyzer: {
       startScan: (path: string) => Promise<{ success: boolean; data?: any; error?: string; cancelled?: boolean }>
       cancelScan: () => Promise<{ success: boolean }>
+      getStatus: () => Promise<{ isScanning: boolean; targetPath: string; progress: any; lastResult: any; error: string | null }>
       onProgress: (callback: (data: any) => void) => () => void
+      onCompleted: (callback: (data: any) => void) => () => void
+      onCancelled: (callback: (data?: any) => void) => () => void
+      onError: (callback: (data: any) => void) => () => void
     }
     system: {
       getInfo: () => Promise<{ success: boolean; data?: any }>
+      getHardwareProfile: () => Promise<{ success: boolean; data?: HardwareProfile; error?: string }>
     }
     shell: {
       openFile: (path: string) => Promise<{ success: boolean; error?: string }>
       showInFolder: (path: string) => Promise<{ success: boolean }>
+      openWith: (path: string, appCommand?: string) => Promise<{ success: boolean; error?: string }>
+      openTerminal: (dirPath: string) => Promise<{ success: boolean; error?: string }>
       openExternal: (url: string) => void
     }
     dialog: {
       openDirectory: () => Promise<{ success: boolean; data?: any }>
       openFile: () => Promise<{ success: boolean; data?: any }>
+    }
+    trash: {
+      getItems: () => Promise<{ success: boolean; data?: any[]; error?: string }>
+      restoreItem: (itemName: string) => Promise<{ success: boolean; error?: string }>
+      deleteItem: (itemPath: string, itemName: string) => Promise<{ success: boolean; error?: string }>
+      empty: () => Promise<{ success: boolean; error?: string }>
+      openFolder: () => Promise<{ success: boolean }>
     }
     transfer: {
       start: (port?: number, downloadDir?: string) => Promise<{

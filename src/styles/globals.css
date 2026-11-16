@@ -158,3 +158,56 @@ body {
 ::selection { background: rgba(79,142,247,0.3); }
 .drag-region { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
+
+/* ==========================================================================
+   PERFORMANCE PROFILES & ADAPTIVE HARDWARE ACCELERATION
+   ========================================================================== */
+
+/* Low-End Profile: Lowers GPU composition, eliminates heavy blurs, and speeds up rendering on Intel UHD / Dual-Core */
+.profile-low-end .glass {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(16, 16, 24, 0.97) !important;
+  box-shadow: none !important;
+}
+
+.profile-low-end .glass-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(20, 20, 30, 0.96) !important;
+  box-shadow: none !important;
+}
+
+.light.profile-low-end .glass {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(245, 247, 250, 0.98) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.light.profile-low-end .glass-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.profile-low-end * {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.05s !important;
+}
+
+/* Accessibility: Respect Windows Reduced Motion setting */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-delay: -1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    background-attachment: initial !important;
+    scroll-behavior: auto !important;
+    transition-delay: 0s !important;
+    transition-duration: 0s !important;
+  }
+}
+

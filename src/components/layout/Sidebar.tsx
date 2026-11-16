@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   FolderOpen,
@@ -10,6 +10,9 @@ import {
   Settings,
   ChevronRight,
   HardDrive,
+  Smartphone,
+  Tablet,
+  ExternalLink,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
@@ -17,7 +20,7 @@ import type { DriveInfo } from '../../types'
 
 const primaryNav = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard', color: '#3b82f6' },
-  { label: 'File Explorer', icon: FolderOpen, to: '/explorer', color: '#f59e0b' },
+  { label: 'File Explorer', icon: FolderOpen, to: '/explorer/' + encodeURIComponent('C:\\'), color: '#f59e0b' },
   { label: 'Storage Analyzer', icon: PieChart, to: '/analyzer', color: '#8b5cf6' },
   { label: 'Wireless Transfer', icon: Wifi, to: '/transfer', color: '#10b981' },
 ]
@@ -29,16 +32,33 @@ const libraryNav = [
 ]
 
 import { useTheme } from '../../hooks/useTheme'
+import { useScan } from '../../context/ScanContext'
 import { Sun, Moon } from 'lucide-react'
 
 export function Sidebar() {
   const { theme, toggleTheme } = useTheme()
+  const location = useLocation()
   const [drives, setDrives] = useState<DriveInfo[]>([])
+  const [portableDevices, setPortableDevices] = useState<any[]>([])
 
-  useEffect(() => {
+  const loadStorage = () => {
     window.electronAPI?.fs.getDrives().then((res) => {
       if (res?.success && res.data) setDrives(res.data)
     })
+    window.electronAPI?.fs.getConnectedDevices().then((res) => {
+      if (res?.success && res.data) setPortableDevices(res.data)
+    })
+  }
+
+  useEffect(() => {
+    loadStorage()
+    const onFocus = () => loadStorage()
+    window.addEventListener('focus', onFocus)
+    const interval = setInterval(loadStorage, 12000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      clearInterval(interval)
+    }
   }, [])
 
   return (
@@ -83,22 +103,82 @@ export function Sidebar() {
               Drives
             </p>
             <div className="space-y-1">
-              {drives.map((d) => (
-                <NavLink
-                  key={d.letter}
-                  to={`/explorer/${encodeURIComponent(d.letter + '\\')}`}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                      isActive
-                        ? 'bg-white/10 text-white font-semibold'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5'
-                    }`
-                  }
-                >
-                  <HardDrive size={14} className="text-blue-400 flex-shrink-0" />
-                  <span className="truncate flex-1">{d.label || 'Local Disk'} ({d.letter})</span>
-                </NavLink>
-              ))}
+              {drives.map((d) => {
+                const labelText = d.label && d.label.includes(d.letter) ? d.label : `${d.label || 'Local Disk'} (${d.letter})`
+                return (
+                  <NavLink
+                    key={d.letter}
+                    to={`/explorer/${encodeURIComponent(d.letter + '\\')}`}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                        isActive
+                          ? 'bg-white/10 text-white font-semibold'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`
+                    }
+                  >
+                    <HardDrive size={14} className="text-blue-400 flex-shrink-0" />
+                    <span className="truncate flex-1">{labelText}</span>
+                  </NavLink>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Connected Mobile & Portable Devices (Phones, Tablets) */}
+        {portableDevices.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between px-3 mb-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-purple-400">
+                Connected Devices
+              </p>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="Device connected" />
+            </div>
+            <div className="space-y-1">
+              {portableDevices.map((dev) => {
+                const Icon = dev.type === 'tablet' ? Tablet : Smartphone
+                const devRoute = `/explorer/${encodeURIComponent(`portable://${dev.name}`)}`
+                const isSelected = location.pathname.includes(encodeURIComponent(dev.name))
+                return (
+                  <div
+                    key={dev.id || dev.name}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all group ${
+                      isSelected
+                        ? 'bg-purple-500/20 text-white font-semibold border border-purple-500/30'
+                        : 'text-gray-300 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <NavLink
+                      to={devRoute}
+                      state={{ fromDashboard: true, initialPath: `portable://${dev.name}`, deviceName: dev.name }}
+                      className="flex items-center gap-2.5 flex-1 min-w-0"
+                    >
+                      <div className="w-5 h-5 rounded-md bg-purple-500/20 flex items-center justify-center flex-shrink-0 text-purple-400 group-hover:scale-110 transition-transform">
+                        <Icon size={12} />
+                      </div>
+                      <div className="truncate flex-1">
+                        <p className="truncate font-medium">{dev.name}</p>
+                        <p className="text-[10px] text-gray-500 flex items-center gap-1">
+                          <span className="w-1 h-1 rounded-full bg-emerald-400 inline-block" />
+                          {dev.status || (dev.type === 'tablet' ? 'Tablet' : 'Phone')}
+                        </p>
+                      </div>
+                    </NavLink>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        window.electronAPI?.fs.openDeviceInExplorer(dev.name)
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-opacity"
+                      title="Open in Windows Explorer"
+                    >
+                      <ExternalLink size={12} />
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
@@ -143,7 +223,9 @@ function SidebarItem({
   color: string
 }) {
   const location = useLocation()
+  const { isScanning } = useScan()
   const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to + '/'))
+  const isAnalyzerScanning = to === '/analyzer' && isScanning
 
   return (
     <NavLink to={to}>
@@ -174,7 +256,13 @@ function SidebarItem({
           <Icon size={16} />
         </div>
         <span className="text-sm truncate flex-1">{label}</span>
-        {isActive && <ChevronRight size={13} style={{ color }} />}
+        {isAnalyzerScanning && (
+          <span className="flex h-2 w-2 relative flex-shrink-0" title="Analyzing in background...">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+          </span>
+        )}
+        {isActive && !isAnalyzerScanning && <ChevronRight size={13} style={{ color }} />}
       </motion.div>
     </NavLink>
   )

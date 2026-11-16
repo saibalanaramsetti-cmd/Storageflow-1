@@ -104,8 +104,15 @@ export class TransferServer {
       this.authToken = crypto.randomBytes(16).toString('hex')
       this.app = express()
       this.server = http.createServer(this.app)
-      this.server.keepAliveTimeout = 65000
-      this.server.headersTimeout = 66000
+      this.server.keepAliveTimeout = 120000
+      this.server.headersTimeout = 125000
+
+      // Ultra-high throughput socket configuration: Disable Nagle's algorithm across entire server
+      this.server.on('connection', (socket) => {
+        socket.setNoDelay(true)
+        socket.setKeepAlive(true, 1000)
+      })
+
       this.io = new SocketIOServer(this.server, {
         cors: { origin: '*' }
       })
@@ -231,11 +238,11 @@ export class TransferServer {
             res.setHeader('Content-Length', chunksize)
             res.setHeader('Content-Type', mimeType)
 
-            // High buffer size (2 MB) for maximum throughput on local Wi-Fi
+            // High buffer size (4 MB) for maximum throughput on local Wi-Fi
             const fileStream = fs.createReadStream(file.path, {
               start,
               end,
-              highWaterMark: 2 * 1024 * 1024
+              highWaterMark: 4 * 1024 * 1024
             })
             fileStream.pipe(res)
 
@@ -248,10 +255,13 @@ export class TransferServer {
             res.status(200)
             res.setHeader('Content-Type', mimeType)
             res.setHeader('Content-Length', fileSize)
+            res.setHeader('Connection', 'keep-alive')
+            res.setHeader('Keep-Alive', 'timeout=120, max=1000')
+            res.setHeader('X-Content-Type-Options', 'nosniff')
 
-            // High buffer size (2 MB) for blazing-fast sequential transfers
+            // Ultra-high buffer size (4 MB) for blazing-fast LAN Wi-Fi transfers
             const fileStream = fs.createReadStream(file.path, {
-              highWaterMark: 2 * 1024 * 1024
+              highWaterMark: 4 * 1024 * 1024
             })
             fileStream.pipe(res)
 
@@ -291,7 +301,82 @@ export class TransferServer {
       this.app.get('/api/download/:id', downloadHandler)
       this.app.get('/api/download/:id/:filename', downloadHandler)
 
-      // API: Upload files (Mobile to PC) - Zero auth barrier
+      // API: High-Speed Direct Binary Stream Upload (Phone to PC) - Up to 5x faster than multipart
+      this.app.post('/api/upload-stream', (req, res) => {
+        const rawName = (req.query.name as string) || (req.headers['x-filename'] as string) || 'mobile_upload'
+        let originalName = 'upload'
+        try {
+          originalName = decodeURIComponent(rawName)
+        } catch {
+          originalName = rawName
+        }
+
+        const safeName = path.basename(originalName).replace(/[^a-zA-Z0-9._\-\s]/g, '_')
+        if (!fs.existsSync(this.downloadDir)) {
+          fs.mkdirSync(this.downloadDir, { recursive: true })
+        }
+
+        let finalName = safeName
+        let counter = 1
+        while (fs.existsSync(path.join(this.downloadDir, finalName))) {
+          const ext = path.extname(safeName)
+          const base = path.basename(safeName, ext)
+          finalName = `${base}_${counter}${ext}`
+          counter++
+        }
+
+        const finalPath = path.join(this.downloadDir, finalName)
+        const writeStream = fs.createWriteStream(finalPath, {
+          highWaterMark: 4 * 1024 * 1024 // 4 MB write buffer
+        })
+
+        let receivedBytes = 0
+        const startTime = Date.now()
+
+        req.on('data', (chunk) => {
+          receivedBytes += chunk.length
+        })
+
+        req.pipe(writeStream)
+
+        writeStream.on('finish', () => {
+          const clientIp = req.ip || req.socket.remoteAddress || 'Mobile'
+          const duration = Math.max(0.05, (Date.now() - startTime) / 1000)
+          const speed = Math.round(receivedBytes / duration)
+
+          const item: TransferHistoryItem = {
+            id: crypto.randomUUID(),
+            fileName: finalName,
+            fileSize: receivedBytes,
+            direction: 'upload',
+            device: clientIp,
+            timestamp: new Date(),
+            status: 'completed',
+            speed
+          }
+
+          this.transferHistory.unshift(item)
+          this.io?.emit('transfer:uploaded', [item])
+          if (this.onProgressCallback) {
+            this.onProgressCallback({ type: 'upload_batch', items: [item] })
+          }
+
+          res.json({ success: true, file: item, speed })
+        })
+
+        writeStream.on('error', (err) => {
+          console.error('Write stream error:', err)
+          if (!res.headersSent) res.status(500).json({ error: err.message })
+        })
+
+        req.on('error', (err) => {
+          console.error('Request stream error:', err)
+          writeStream.destroy()
+          if (!res.headersSent) res.status(500).json({ error: err.message })
+        })
+      })
+
+      // API: Upload files fallback (Multipart)
       this.app.post('/api/upload', upload.array('files'), (req, res) => {
         const files = req.files as Express.Multer.File[]
         if (!files || files.length === 0) {
@@ -883,7 +968,10 @@ export class TransferServer {
       showToast('Starting download of all ' + currentSharedFiles.length + ' file(s)...');
     }
 
+    let isTransferActive = false;
+
     function checkFiles(isManual) {
+      if (isTransferActive && !isManual) return;
       const syncStatus = document.getElementById('sync-status-bar');
       if (isManual && syncStatus) {
         syncStatus.textContent = '🔄 Refreshing files list...';
@@ -910,20 +998,20 @@ export class TransferServer {
         });
     }
 
-    // High-frequency polling every 1.5 seconds for instant file discovery
+    // Gentle fallback polling every 6 seconds only when no transfer is active
     checkFiles();
-    setInterval(() => checkFiles(false), 1500);
+    setInterval(() => {
+      if (!isTransferActive) checkFiles(false);
+    }, 6000);
 
     function handleFilesSelected(files) {
       if (!files || files.length === 0) return;
-      uploadFiles(files);
+      uploadFilesDirect(Array.from(files));
     }
 
-    function uploadFiles(fileList) {
-      const formData = new FormData();
-      for (let i = 0; i < fileList.length; i++) {
-        formData.append('files', fileList[i]);
-      }
+    async function uploadFilesDirect(fileList) {
+      if (!fileList || fileList.length === 0) return;
+      isTransferActive = true;
 
       const statusDiv = document.getElementById('upload-status');
       const label = document.getElementById('upload-file-label');
@@ -932,48 +1020,73 @@ export class TransferServer {
       const details = document.getElementById('upload-details');
 
       statusDiv.style.display = 'block';
-      label.textContent = \`Uploading \${fileList.length} file\${fileList.length > 1 ? 's' : ''} to PC...\`;
-      percentEl.textContent = '0%';
-      fill.style.width = '0%';
+      fill.style.background = 'var(--accent-gradient)';
 
-      const xhr = new XMLHttpRequest();
-      const startTime = Date.now();
+      let totalOverallBytes = fileList.reduce((acc, f) => acc + f.size, 0);
+      let overallLoaded = 0;
+      let completedCount = 0;
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          percentEl.textContent = percent + '%';
-          fill.style.width = percent + '%';
-          const elapsedSec = (Date.now() - startTime) / 1000;
-          const speed = elapsedSec > 0 ? e.loaded / elapsedSec : 0;
-          details.textContent = \`\${formatBytes(e.loaded)} of \${formatBytes(e.total)} (\${formatBytes(speed)}/s)\`;
-        }
-      };
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        label.textContent = \`Uploading (\${i + 1}/\${fileList.length}): \${file.name}\`;
+        
+        await new Promise((resolve) => {
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
+          let prevLoaded = 0;
 
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          label.textContent = 'Upload to PC Complete! ✅';
-          percentEl.textContent = '100%';
-          fill.style.width = '100%';
-          fill.style.background = '#10b981';
-          showToast('Uploaded ' + fileList.length + ' file(s) to PC!');
-          setTimeout(() => {
-            statusDiv.style.display = 'none';
-            fill.style.background = 'var(--accent-gradient)';
-          }, 3500);
-        } else {
-          label.textContent = 'Upload failed ❌';
-          details.textContent = 'Server error ' + xhr.status;
-        }
-      };
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const delta = e.loaded - prevLoaded;
+              prevLoaded = e.loaded;
+              overallLoaded += delta;
 
-      xhr.onerror = () => {
-        label.textContent = 'Network Error ❌';
-        details.textContent = 'Could not reach StorageFlow PC server';
-      };
+              const percent = Math.min(100, Math.round((overallLoaded / totalOverallBytes) * 100));
+              percentEl.textContent = percent + '%';
+              fill.style.width = percent + '%';
 
-      xhr.open('POST', '/api/upload?token=' + encodeURIComponent(token), true);
-      xhr.send(formData);
+              const elapsedSec = (Date.now() - startTime) / 1000;
+              const speed = elapsedSec > 0 ? e.loaded / elapsedSec : 0;
+              details.textContent = \`\${formatBytes(overallLoaded)} of \${formatBytes(totalOverallBytes)} • \${formatBytes(speed)}/s\`;
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status === 200) {
+              completedCount++;
+            }
+            resolve();
+          };
+
+          xhr.onerror = () => {
+            resolve();
+          };
+
+          // High-speed direct stream upload endpoint with zero multipart overhead
+          const uploadUrl = '/api/upload-stream?name=' + encodeURIComponent(file.name) + '&token=' + encodeURIComponent(token);
+          xhr.open('POST', uploadUrl, true);
+          xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+          xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+          xhr.send(file);
+        });
+      }
+
+      isTransferActive = false;
+      if (completedCount === fileList.length) {
+        label.textContent = 'Upload to PC Complete! ✅';
+        percentEl.textContent = '100%';
+        fill.style.width = '100%';
+        fill.style.background = '#10b981';
+        showToast('Uploaded ' + completedCount + ' file(s) to PC at maximum speed!');
+      } else {
+        label.textContent = \`Uploaded \${completedCount} of \${fileList.length} files\`;
+      }
+
+      setTimeout(() => {
+        statusDiv.style.display = 'none';
+        fill.style.background = 'var(--accent-gradient)';
+        checkFiles(true);
+      }, 3500);
     }
   </script>
 </body>

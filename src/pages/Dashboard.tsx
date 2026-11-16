@@ -9,6 +9,8 @@ import {
   ChevronRight,
   Folder,
   Smartphone,
+  Tablet,
+  ExternalLink,
   FolderOpen,
   Image,
   FileText,
@@ -41,6 +43,8 @@ const itemVariant = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } 
 export function Dashboard() {
   const navigate = useNavigate()
   const [drives, setDrives] = useState<DriveInfo[]>([])
+  const [portableDevices, setPortableDevices] = useState<any[]>([])
+  const [displayName, setDisplayName] = useState<string>('')
   const [recentFiles, setRecentFiles] = useState<FileItem[]>([])
   const [fileTypeStats, setFileTypeStats] = useState<Record<string, number>>({})
   const [connectedDevices, setConnectedDevices] = useState<TransferDevice[]>([])
@@ -51,37 +55,54 @@ export function Dashboard() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      // 1. Get real drives
+      const savedName = localStorage.getItem('sf-display-name')
+      if (savedName) {
+        setDisplayName(savedName)
+      }
+
+      // 1. Get real drives & connected portable devices (phones/tablets)
       const drivesResult = await window.electronAPI?.fs.getDrives()
       if (drivesResult?.success && drivesResult.data) {
         setDrives(drivesResult.data)
+      }
+      const devResult = await window.electronAPI?.fs.getConnectedDevices()
+      if (devResult?.success && devResult.data) {
+        setPortableDevices(devResult.data)
       }
 
       // 2. Get real system info
       const sysResult = await window.electronAPI?.system.getInfo()
       if (sysResult?.success && sysResult.data) {
         setSysInfo(sysResult.data)
+        if (!savedName && sysResult.data.username) {
+          setDisplayName(sysResult.data.username)
+        }
         if (sysResult.data.quickPaths) {
           setQuickPaths(sysResult.data.quickPaths)
         }
       }
 
-      // 3. Scan recent files from real user folders
+      // 3. Scan recent files from real user folders in parallel
       const home = sysResult?.data?.homeDir || ''
       const foldersToScan = [
         sysResult?.data?.quickPaths?.desktop,
         sysResult?.data?.quickPaths?.downloads,
         sysResult?.data?.quickPaths?.documents,
-      ].filter(Boolean)
+        sysResult?.data?.quickPaths?.videos,
+        sysResult?.data?.quickPaths?.music,
+        sysResult?.data?.quickPaths?.pictures,
+      ].filter(Boolean) as string[]
 
       const foundFiles: FileItem[] = []
       const typeCounts: Record<string, number> = {}
 
-      for (const dir of foldersToScan) {
-        if (!dir) continue
-        const res = await window.electronAPI?.fs.readDir(dir)
-        if (res?.success && res.data) {
-          for (const item of res.data) {
+      const scanResults = await Promise.allSettled(
+        foldersToScan.map((dir) => window.electronAPI?.fs.readDir(dir))
+      )
+
+      for (const res of scanResults) {
+        if (res.status === 'fulfilled' && res.value?.success && res.value.data) {
+          for (const item of res.value.data) {
             if (item.type === 'file') {
               foundFiles.push(item)
               const cat = getFileTypeCategory(item.extension)
@@ -119,10 +140,10 @@ export function Dashboard() {
   const quickAccess = [
     { label: 'Desktop', icon: Folder, path: quickPaths.desktop, color: '#3b82f6' },
     { label: 'Downloads', icon: Download, path: quickPaths.downloads, color: '#10b981' },
-    { label: 'Documents', icon: FileText, path: quickPaths.documents, color: '#f59e0b' },
-    { label: 'Pictures', icon: Image, path: quickPaths.pictures, color: '#ec4899' },
-    { label: 'Music', icon: Music, path: quickPaths.music, color: '#8b5cf6' },
-    { label: 'Videos', icon: Video, path: quickPaths.videos, color: '#ef4444' },
+    { label: 'Documents', icon: FileText, path: 'category:documents', color: '#f59e0b' },
+    { label: 'Pictures', icon: Image, path: 'category:images', color: '#ec4899' },
+    { label: 'Music', icon: Music, path: 'category:music', color: '#8b5cf6' },
+    { label: 'Videos', icon: Video, path: 'category:videos', color: '#ef4444' },
   ]
 
   const typeColors: Record<string, string> = {
@@ -144,11 +165,11 @@ export function Dashboard() {
         <motion.div variants={itemVariant} className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              Welcome back{sysInfo?.username ? `, ${sysInfo.username}` : ''}
+              Welcome back{displayName ? `, ${displayName}` : ''}
               <span className="inline-block animate-pulse text-blue-400">👋</span>
             </h1>
             <p className="text-xs text-gray-400 mt-1">
-              StorageFlow 1.1 system overview & storage health metrics
+              StorageFlow 2.0 system overview & storage health metrics
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -173,7 +194,11 @@ export function Dashboard() {
 
         {/* Storage Capacity Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <motion.div variants={itemVariant} className="glass-card p-4 relative overflow-hidden">
+          {/* Total Capacity - Non-interactive info card */}
+          <motion.div
+            variants={itemVariant}
+            className="glass-card p-4 relative overflow-hidden"
+          >
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Total Capacity
@@ -188,56 +213,87 @@ export function Dashboard() {
             <p className="text-xs text-gray-400 mt-1">Across {drives.length} detected drive(s)</p>
           </motion.div>
 
-          <motion.div variants={itemVariant} className="glass-card p-4 relative overflow-hidden">
+          {/* Space Used - Opens File Explorer */}
+          <motion.div
+            variants={itemVariant}
+            onClick={() => navigate('/explorer', { state: { fromDashboard: true } })}
+            className="glass-card p-4 relative overflow-hidden cursor-pointer hover:border-purple-500/50 hover:bg-purple-950/20 transition-all hover:-translate-y-0.5 group"
+            title="Click to open File Explorer"
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider group-hover:text-purple-300 transition-colors">
                 Space Used
               </span>
-              <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center text-purple-400">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center text-purple-400 group-hover:bg-purple-500/30 group-hover:scale-110 transition-all">
                 <TrendingUp size={16} />
               </div>
             </div>
-            <p className="text-2xl font-extrabold text-white mt-2">
+            <p className="text-2xl font-extrabold text-white mt-2 group-hover:text-purple-200 transition-colors">
               {formatBytes(usedStorage)}
             </p>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-purple-400 font-semibold">
-                {percentUsed.toFixed(1)}%
+            <div className="flex items-center justify-between mt-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-purple-400 font-semibold">
+                  {percentUsed.toFixed(1)}%
+                </span>
+                <span className="text-xs text-gray-400">of total capacity</span>
+              </div>
+              <span className="text-[10px] text-purple-400 opacity-0 group-hover:opacity-100 flex items-center transition-opacity font-medium">
+                Explore <ChevronRight size={12} />
               </span>
-              <span className="text-xs text-gray-400">of total capacity</span>
             </div>
           </motion.div>
 
-          <motion.div variants={itemVariant} className="glass-card p-4 relative overflow-hidden">
+          <motion.div
+            variants={itemVariant}
+            onClick={() => navigate('/analyzer')}
+            className="glass-card p-4 relative overflow-hidden cursor-pointer hover:border-emerald-500/40 hover:bg-emerald-950/20 transition-all hover:-translate-y-0.5 group"
+            title="Click to inspect free space in Storage Analyzer"
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider group-hover:text-emerald-300 transition-colors">
                 Available Free
               </span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500/30 group-hover:scale-110 transition-all">
                 <Zap size={16} />
               </div>
             </div>
-            <p className="text-2xl font-extrabold text-white mt-2">
+            <p className="text-2xl font-extrabold text-white mt-2 group-hover:text-emerald-200 transition-colors">
               {formatBytes(freeStorage)}
             </p>
-            <p className="text-xs text-emerald-400 mt-1">Ready for storage</p>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-xs text-emerald-400">Ready for storage</p>
+              <span className="text-[10px] text-emerald-400 opacity-0 group-hover:opacity-100 flex items-center transition-opacity">
+                Details <ChevronRight size={12} />
+              </span>
+            </div>
           </motion.div>
 
-          <motion.div variants={itemVariant} className="glass-card p-4 relative overflow-hidden">
+          <motion.div
+            variants={itemVariant}
+            onClick={() => navigate('/transfer')}
+            className="glass-card p-4 relative overflow-hidden cursor-pointer hover:border-amber-500/40 hover:bg-amber-950/20 transition-all hover:-translate-y-0.5 group"
+            title="Click to open Wireless Transfer"
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider group-hover:text-amber-300 transition-colors">
                 Wireless Devices
               </span>
-              <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 group-hover:bg-amber-500/30 group-hover:scale-110 transition-all">
                 <Smartphone size={16} />
               </div>
             </div>
-            <p className="text-2xl font-extrabold text-white mt-2">
+            <p className="text-2xl font-extrabold text-white mt-2 group-hover:text-amber-200 transition-colors">
               {connectedDevices.length}
             </p>
-            <p className="text-xs text-gray-400 mt-1">
-              {connectedDevices.length > 0 ? 'Active phone connected' : 'Ready to pair via QR'}
-            </p>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-xs text-gray-400">
+                {connectedDevices.length > 0 ? 'Active phone connected' : 'Ready to pair via QR'}
+              </p>
+              <span className="text-[10px] text-amber-400 opacity-0 group-hover:opacity-100 flex items-center transition-opacity">
+                Connect <ChevronRight size={12} />
+              </span>
+            </div>
           </motion.div>
         </div>
 
@@ -245,7 +301,7 @@ export function Dashboard() {
         <motion.div variants={itemVariant} className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-gray-300 uppercase tracking-wider">
-              Connected Storage Drives
+              Storage Drives & Connected Devices
             </h2>
             <Button
               variant="ghost"
@@ -281,7 +337,7 @@ export function Dashboard() {
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">
-                          {d.label} ({d.letter})
+                          {d.label && d.label.includes(d.letter) ? d.label : `${d.label || 'Disk'} (${d.letter})`}
                         </h4>
                         <span className="text-[11px] text-gray-400">{d.fileSystem} File System</span>
                       </div>
@@ -294,6 +350,56 @@ export function Dashboard() {
                   <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
                     <span>Used: {formatBytes(d.used)}</span>
                     <span className="text-gray-300 font-medium">Free: {formatBytes(d.free)}</span>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Connected Phones & Portable Devices */}
+            {portableDevices.map((dev) => {
+              const Icon = dev.type === 'tablet' ? Tablet : Smartphone
+              return (
+                <div
+                  key={dev.id || dev.name}
+                  onClick={() =>
+                    navigate(`/explorer/${encodeURIComponent(`portable://${dev.name}`)}`, {
+                      state: { fromDashboard: true, initialPath: `portable://${dev.name}`, deviceName: dev.name },
+                    })
+                  }
+                  className="glass-card p-4 hover:border-purple-500/50 cursor-pointer transition-all hover:-translate-y-0.5 group border-purple-500/20 bg-purple-950/10"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-purple-500/15 text-purple-400 group-hover:scale-110 transition-transform">
+                        <Icon size={18} />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
+                          {dev.name}
+                        </h4>
+                        <span className="text-[11px] text-gray-400">
+                          {dev.type === 'tablet' ? 'Portable Tablet' : 'Smartphone'}
+                        </span>
+                      </div>
+                    </div>
+                    <Badge color="#a855f7">{dev.status || 'Connected'}</Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-5 text-xs text-gray-400">
+                    <span className="flex items-center gap-1.5 text-purple-300 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                      USB Storage Ready
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.electronAPI?.fs.openDeviceInExplorer(dev.name)
+                      }}
+                      className="text-[11px] text-gray-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                      title="Open in Windows Explorer"
+                    >
+                      Explorer <ExternalLink size={11} />
+                    </button>
                   </div>
                 </div>
               )
@@ -313,7 +419,7 @@ export function Dashboard() {
                 <button
                   key={qa.label}
                   disabled={!qa.path}
-                  onClick={() => qa.path && navigate(`/explorer/${encodeURIComponent(qa.path)}`)}
+                  onClick={() => qa.path && navigate(`/explorer/${encodeURIComponent(qa.path)}`, { state: { fromDashboard: true, initialPath: qa.path } })}
                   className="glass-card p-3.5 flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-all hover:scale-105 group disabled:opacity-40"
                 >
                   <div
@@ -413,17 +519,30 @@ export function Dashboard() {
                   .map(([type, count]) => {
                     const color = typeColors[type] || '#64748b'
                     const pct = (count / totalFilesFound) * 100
+                    const categoryMap: Record<string, string> = {
+                      Videos: 'category:videos',
+                      Audio: 'category:music',
+                      Images: 'category:images',
+                      Documents: 'category:documents',
+                    }
+                    const targetCategory = categoryMap[type]
+
                     return (
-                      <div key={type} className="space-y-1">
+                      <div
+                        key={type}
+                        onClick={() => targetCategory && navigate(`/explorer/${encodeURIComponent(targetCategory)}`, { state: { fromDashboard: true, initialPath: targetCategory } })}
+                        className={`space-y-1 ${targetCategory ? 'cursor-pointer p-1.5 -mx-1.5 rounded-lg hover:bg-white/5 transition-colors group' : ''}`}
+                        title={targetCategory ? `Click to view all ${type}` : undefined}
+                      >
                         <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-gray-300 flex items-center gap-2">
+                          <span className="font-semibold text-gray-300 flex items-center gap-2 group-hover:text-white transition-colors">
                             <span
-                              className="w-2 h-2 rounded-full inline-block"
+                              className="w-2 h-2 rounded-full inline-block group-hover:scale-125 transition-transform"
                               style={{ background: color }}
                             />
                             {type}
                           </span>
-                          <span className="text-gray-400">
+                          <span className="text-gray-400 group-hover:text-gray-200">
                             {count} ({pct.toFixed(0)}%)
                           </span>
                         </div>

@@ -17,6 +17,7 @@ import {
   ExternalLink,
   ShieldCheck,
   RefreshCw,
+  Zap,
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -348,6 +349,19 @@ export function WirelessTransfer() {
               <p className="text-[10px] text-gray-500">
                 All photos, videos, and documents sent from your mobile device will be saved directly into this directory.
               </p>
+            </div>
+
+            {/* High-Speed Transfer Tips */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-950/30 to-purple-950/30 border border-blue-500/20 text-xs space-y-1.5">
+              <div className="flex items-center gap-2 text-blue-400 font-semibold">
+                <Zap size={14} className="flex-shrink-0" />
+                <span>Tips for Maximum Transfer Speeds:</span>
+              </div>
+              <ul className="text-[11px] text-gray-400 space-y-1 list-disc pl-4">
+                <li><strong className="text-gray-200">5 GHz Wi-Fi:</strong> Connect PC and phone to 5 GHz Wi-Fi for 40–100+ MB/s speeds (2.4 GHz is usually capped by radio physics to 3–8 MB/s).</li>
+                <li><strong className="text-gray-200">Direct Hotspot:</strong> If your Wi-Fi router is slow or crowded, turn on your phone's 5 GHz Mobile Hotspot and connect your PC directly to it.</li>
+                <li><strong className="text-gray-200">Hardware Acceleration:</strong> Direct 4 MB binary streaming and TCP_NODELAY socket optimization are now active.</li>
+              </ul>
             </div>
           </div>
 

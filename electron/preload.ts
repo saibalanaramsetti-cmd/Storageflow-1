@@ -8,6 +8,7 @@ const api = {
   },
   fs: {
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:readDir', dirPath),
+    getCategoryFiles: (category: string) => ipcRenderer.invoke('fs:getCategoryFiles', category),
     createDir: (dirPath: string) => ipcRenderer.invoke('fs:createDir', dirPath),
     rename: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:rename', oldPath, newPath),
     delete: (filePath: string) => ipcRenderer.invoke('fs:delete', filePath),
@@ -20,23 +21,53 @@ const api = {
     getThumbnail: (filePath: string) => ipcRenderer.invoke('fs:getThumbnail', filePath),
     getFolderSize: (dirPath: string) => ipcRenderer.invoke('fs:getFolderSize', dirPath),
     getDrives: () => ipcRenderer.invoke('fs:getDrives'),
+    getConnectedDevices: () => ipcRenderer.invoke('fs:getConnectedDevices'),
+    openDeviceInExplorer: (deviceName: string) => ipcRenderer.invoke('fs:openDeviceInExplorer', deviceName),
+    readPortableDevice: (deviceName: string, subPath?: string) => ipcRenderer.invoke('fs:readPortableDevice', deviceName, subPath),
+    compressToZip: (targetPath: string) => ipcRenderer.invoke('fs:compressToZip', targetPath),
   },
   analyzer: {
     startScan: (scanPath: string) => ipcRenderer.invoke('analyzer:startScan', scanPath),
     cancelScan: () => ipcRenderer.invoke('analyzer:cancelScan'),
+    getStatus: () => ipcRenderer.invoke('analyzer:getStatus'),
     onProgress: (callback: (data: any) => void) => {
       const handler = (_: any, data: any) => callback(data)
       ipcRenderer.on('analyzer:progress', handler)
       return () => ipcRenderer.removeListener('analyzer:progress', handler)
     },
+    onCompleted: (callback: (data: any) => void) => {
+      const handler = (_: any, data: any) => callback(data)
+      ipcRenderer.on('analyzer:completed', handler)
+      return () => ipcRenderer.removeListener('analyzer:completed', handler)
+    },
+    onCancelled: (callback: (data?: any) => void) => {
+      const handler = (_: any, data: any) => callback(data)
+      ipcRenderer.on('analyzer:cancelled', handler)
+      return () => ipcRenderer.removeListener('analyzer:cancelled', handler)
+    },
+    onError: (callback: (data: any) => void) => {
+      const handler = (_: any, data: any) => callback(data)
+      ipcRenderer.on('analyzer:error', handler)
+      return () => ipcRenderer.removeListener('analyzer:error', handler)
+    },
   },
   system: {
     getInfo: () => ipcRenderer.invoke('system:getInfo'),
+    getHardwareProfile: () => ipcRenderer.invoke('system:getHardwareProfile'),
   },
   shell: {
     openFile: (filePath: string) => ipcRenderer.invoke('shell:openFile', filePath),
     showInFolder: (filePath: string) => ipcRenderer.invoke('shell:showInFolder', filePath),
+    openWith: (filePath: string, appCommand?: string) => ipcRenderer.invoke('shell:openWith', filePath, appCommand),
+    openTerminal: (dirPath: string) => ipcRenderer.invoke('shell:openTerminal', dirPath),
     openExternal: (url: string) => ipcRenderer.send('open-external', url),
+  },
+  trash: {
+    getItems: () => ipcRenderer.invoke('trash:getItems'),
+    restoreItem: (itemName: string) => ipcRenderer.invoke('trash:restoreItem', itemName),
+    deleteItem: (itemPath: string, itemName: string) => ipcRenderer.invoke('trash:deleteItem', itemPath, itemName),
+    empty: () => ipcRenderer.invoke('trash:empty'),
+    openFolder: () => ipcRenderer.invoke('trash:openFolder'),
   },
   dialog: {
     openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),

@@ -32,11 +32,34 @@ export interface ScanResult {
 export class StorageScanner {
   private isCancelled = false
   private isScanning = false
+  private targetPath = ''
+  private currentProgress = {
+    currentPath: '',
+    scannedFiles: 0,
+    scannedSize: 0,
+    scannedFolders: 0,
+  }
+  private lastResult: ScanResult | null = null
+  private lastError: string | null = null
   private scanCache = new Map<string, { timestamp: number; result: ScanResult }>()
-  private CACHE_TTL = 5 * 60 * 1000 // 5 minutes cache
+  private CACHE_TTL = 10 * 60 * 1000 // 10 minutes cache
 
-  public cancel() {
+  public getStatus() {
+    return {
+      isScanning: this.isScanning,
+      targetPath: this.targetPath,
+      progress: this.currentProgress,
+      lastResult: this.lastResult,
+      error: this.lastError,
+    }
+  }
+
+  public cancel(window?: BrowserWindow | null) {
     this.isCancelled = true
+    this.isScanning = false
+    if (window && !window.isDestroyed()) {
+      window.webContents.send('analyzer:cancelled', { targetPath: this.targetPath })
+    }
   }
 
   public getCached(scanPath: string): ScanResult | null {
@@ -95,17 +118,30 @@ export class StorageScanner {
 
     this.isScanning = true
     this.isCancelled = false
+    this.targetPath = rootPath
+    this.lastError = null
+    this.currentProgress = {
+      currentPath: 'Initializing scan...',
+      scannedFiles: 0,
+      scannedSize: 0,
+      scannedFolders: 0,
+    }
 
     const cached = this.getCached(rootPath)
     if (cached) {
       this.isScanning = false
+      this.lastResult = cached
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('analyzer:completed', { success: true, data: cached, targetPath: rootPath })
+      }
       return { success: true, data: cached }
     }
 
     try {
       const typeDistribution: Record<string, { size: number; count: number }> = {}
-      const allFiles: Array<{ path: string; name: string; size: number; extension: string }> = []
-      const folderSizes: Array<{ path: string; name: string; size: number; fileCount: number }> = []
+      const largestFiles: FolderFileItem[] = []
+      const largestFolders: Array<{ path: string; name: string; size: number; fileCount: number }> = []
+      const visitedPaths = new Set<string>()
 
       let totalSize = 0
       let totalFiles = 0
@@ -123,7 +159,28 @@ export class StorageScanner {
         return 'Other'
       }
 
-      // Non-blocking recursive scan with setImmediate yields
+      // Memory-bounded insertion helpers (avoids keeping hundreds of thousands of objects in RAM)
+      const trackLargestFile = (item: FolderFileItem) => {
+        if (largestFiles.length < 30) {
+          largestFiles.push(item)
+          largestFiles.sort((a, b) => b.size - a.size)
+        } else if (item.size > largestFiles[largestFiles.length - 1].size) {
+          largestFiles[largestFiles.length - 1] = item
+          largestFiles.sort((a, b) => b.size - a.size)
+        }
+      }
+
+      const trackLargestFolder = (item: { path: string; name: string; size: number; fileCount: number }) => {
+        if (largestFolders.length < 20) {
+          largestFolders.push(item)
+          largestFolders.sort((a, b) => b.size - a.size)
+        } else if (item.size > largestFolders[largestFolders.length - 1].size) {
+          largestFolders[largestFolders.length - 1] = item
+          largestFolders.sort((a, b) => b.size - a.size)
+        }
+      }
+
+      // Non-blocking recursive scan with setImmediate yields and junction cycle protection
       const scanDir = async (
         dirPath: string,
         depth: number
@@ -146,8 +203,22 @@ export class StorageScanner {
           }
         }
 
-        // Yield to Node event loop every 40 files
-        if (totalFiles % 40 === 0) {
+        const normalizedDir = path.resolve(dirPath).toLowerCase()
+        if (visitedPaths.has(normalizedDir)) {
+          return {
+            name: path.basename(dirPath) || dirPath,
+            path: dirPath,
+            size: 0,
+            fileCount: 0,
+            filesTotalSize: 0,
+            subfolders: [],
+            files: []
+          }
+        }
+        visitedPaths.add(normalizedDir)
+
+        // Yield to Node event loop every 35 files to prevent main thread starvation
+        if (totalFiles % 35 === 0) {
           await new Promise((r) => setImmediate(r))
         }
 
@@ -164,10 +235,13 @@ export class StorageScanner {
               }
 
               if (entry.isDirectory()) {
-                // Avoid scanning system junctions
+                // Avoid scanning system junctions, cycles, and protected volumes
+                const lowerName = entry.name.toLowerCase()
                 if (
-                  entry.name === '$RECYCLE.BIN' ||
-                  entry.name === 'System Volume Information'
+                  lowerName === '$recycle.bin' ||
+                  lowerName === 'system volume information' ||
+                  lowerName === 'application data' ||
+                  lowerName === 'appdata'
                 ) {
                   continue
                 }
@@ -178,14 +252,14 @@ export class StorageScanner {
                   dirTotalSize += subNode.size
                   dirTotalFiles += subNode.fileCount
                   subfolders.push(subNode)
-                  folderSizes.push({
+                  trackLargestFolder({
                     name: entry.name,
                     path: fullPath,
                     size: subNode.size,
                     fileCount: subNode.fileCount
                   })
                 } else {
-                  // If beyond display depth, still compute full recursive size so totals are 100% accurate
+                  // If beyond display depth, compute full recursive size
                   const deep = await this.quickCalc(fullPath)
                   dirTotalSize += deep.size
                   dirTotalFiles += deep.fileCount
@@ -219,28 +293,29 @@ export class StorageScanner {
                 }
 
                 directFiles.push(fileItem)
-                allFiles.push(fileItem)
+                trackLargestFile(fileItem)
               }
             } catch {
               // Permission error or file disappeared
             }
 
-            // Report progress every 200ms
-            if (Date.now() - lastProgressReport > 200 && window && !window.isDestroyed()) {
+            // Update internal state and report progress every 150ms
+            this.currentProgress = {
+              currentPath: fullPath,
+              scannedFiles: totalFiles,
+              scannedSize: totalSize,
+              scannedFolders: totalFolders,
+            }
+            if (Date.now() - lastProgressReport > 150 && window && !window.isDestroyed()) {
               lastProgressReport = Date.now()
-              window.webContents.send('analyzer:progress', {
-                currentPath: fullPath,
-                scannedFiles: totalFiles,
-                scannedSize: totalSize,
-                scannedFolders: totalFolders
-              })
+              window.webContents.send('analyzer:progress', this.currentProgress)
             }
           }
         } catch {
           // Directory permission error
         }
 
-        // Sort descending by size
+        // Sort descending by size and bound retained direct files to top 30 to prevent heap bloat
         subfolders.sort((a, b) => b.size - a.size)
         directFiles.sort((a, b) => b.size - a.size)
 
@@ -251,7 +326,7 @@ export class StorageScanner {
           fileCount: dirTotalFiles,
           filesTotalSize,
           subfolders,
-          files: directFiles
+          files: directFiles.slice(0, 30)
         }
       }
 
@@ -259,27 +334,35 @@ export class StorageScanner {
 
       if (this.isCancelled) {
         this.isScanning = false
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('analyzer:cancelled', { targetPath: rootPath })
+        }
         return { success: false, cancelled: true }
       }
-
-      folderSizes.sort((a, b) => b.size - a.size)
-      allFiles.sort((a, b) => b.size - a.size)
 
       const result: ScanResult = {
         totalSize,
         totalFiles,
         totalFolders,
-        largestFolders: folderSizes.slice(0, 20),
-        largestFiles: allFiles.slice(0, 30),
+        largestFolders,
+        largestFiles,
         typeDistribution,
         rootTree
       }
 
       this.scanCache.set(rootPath, { timestamp: Date.now(), result })
+      this.lastResult = result
       this.isScanning = false
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('analyzer:completed', { success: true, data: result, targetPath: rootPath })
+      }
       return { success: true, data: result }
     } catch (err: any) {
       this.isScanning = false
+      this.lastError = err.message
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('analyzer:error', { error: err.message, targetPath: rootPath })
+      }
       return { success: false, error: err.message }
     }
   }
